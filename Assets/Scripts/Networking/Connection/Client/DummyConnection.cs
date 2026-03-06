@@ -2,14 +2,22 @@ using Cysharp.Threading.Tasks;
 using MinesServer.Data;
 using MinesServer.Networking.Client.Packets;
 using MinesServer.Networking.Client.Packets.Connection;
+using MinesServer.Networking.Client.Packets.GUI;
 using MinesServer.Networking.Client.Packets.Utilities;
 using MinesServer.Networking.Server.Packets;
 using MinesServer.Networking.Server.Packets.Connection;
+using MinesServer.Networking.Server.Packets.GUI;
+using MinesServer.Networking.Server.Packets.GUI.Components;
+using MinesServer.Networking.Server.Packets.GUI.Components.Containers;
+using MinesServer.Networking.Server.Packets.GUI.Components.Input;
+using MinesServer.Networking.Server.Packets.GUI.Components.Visual;
 using MinesServer.Networking.Server.Packets.Information;
 using MinesServer.Networking.Server.Packets.Utilities;
 using MinesServer.Networking.Server.Packets.World;
 using MinesServer.Networking.Shared;
+using MinesServer.Networking.Shared.Packets;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MinesServer.Networking.Connection.Client
@@ -102,9 +110,201 @@ namespace MinesServer.Networking.Connection.Client
                 case RuntimeAssetRequestPacket runtimeAssets:
                     HandleAssetRequest(runtimeAssets).Forget();
                     break;
+                case OpenHelpClickPacket:
+                    SendMockWindow(false);
+                    break;
+                case OpenSettingsClickPacket:
+                    SendMockWindow(true);
+                    break;
                 default:
                     break;
             }
+        }
+
+        public void SendMockWindow(bool comprehensive)
+        {
+            var windowPacket = comprehensive ? CreateComprehensiveMockWindow() : CreateMockWindow();
+            OnReceived?.Invoke(new ServerPacket(windowPacket));
+        }
+
+        private OpenWindowPacket CreateMockWindow()
+        {
+            var rootElement = new DockPanelPacket
+            {
+                Style = new GUIStylePacket
+                {
+                    Background = System.Drawing.Color.FromArgb(255, 66, 66, 66),
+                    Padding = new Margins(10, 10, 10, 10)
+                },
+                Children = new List<IGUIComponentPacket>
+                {
+                    new TextPacket
+                    {
+                        Text = "<color=white>Top 0</color>",
+                        Style = new GUIStylePacket {
+                            Background = System.Drawing.Color.Blue,
+                            Padding = new Margins(5,5,5,5)
+                        },
+                        AttachedProperties = new StringPairPacket[] {
+                            new("DockPanel.Dock", "Top")
+                        }
+                    },
+                    new TextPacket
+                    {
+                        Text = "<color=white>Left 1</color>",
+                        Style = new GUIStylePacket {
+                            Background = System.Drawing.Color.Red,
+                            Padding = new Margins(5,5,5,5)
+                        },
+                        AttachedProperties = new StringPairPacket[] {
+                            new("DockPanel.Dock", "Left")
+                        }
+                    },
+                    new TextPacket
+                    {
+                        Text = "<color=white>Bottom 2</color>",
+                        Style = new GUIStylePacket {
+                            Background = System.Drawing.Color.Blue,
+                            Padding = new Margins(5,5,5,5)
+                        },
+                        AttachedProperties = new StringPairPacket[] {
+                            new("DockPanel.Dock", "Bottom")
+                        }
+                    },
+                    new TextPacket
+                    {
+                        Text = "<color=white>Right 3</color>",
+                        Style = new GUIStylePacket {
+                            Background = System.Drawing.Color.Red,
+                            Padding = new Margins(5,5,5,5)
+                        },
+                        AttachedProperties = new StringPairPacket[] {
+                            new("DockPanel.Dock", "Right")
+                        }
+                    },
+                    new GridPacket
+                    {
+                        Columns = new byte[] { 1, 0, 1, 1 },
+                        Rows = new byte[] { 1, 0, 1, 1 },
+                        Children = new IGUIComponentPacket[]
+                        {
+                            new TextPacket {
+                                Text = "(0,0)",
+                                AttachedProperties = new StringPairPacket[] {
+                                    new("Grid.Row", "0"),
+                                    new("Grid.Column", "0")
+                                },
+                                Style = new GUIStylePacket{
+                                    Background = System.Drawing.Color.Yellow
+                                }
+                            },
+                            new TextPacket {
+                                Text = "Auto-Row",
+                                AttachedProperties = new StringPairPacket[] {
+                                    new("Grid.Row", "1"),
+                                    new("Grid.Column", "0")
+                                },
+                                Style = new GUIStylePacket{
+                                    Background = System.Drawing.Color.CornflowerBlue,
+                                    Padding = new Margins(5,5,15,5)
+                                }
+                            },
+                        }
+                    }
+                }
+            };
+
+            return new OpenWindowPacket("TestWindow", 800, 600, rootElement);
+        }
+
+        private OpenWindowPacket CreateComprehensiveMockWindow()
+        {
+            var @checked = new ImagePacket()
+            {
+                URI = "/ui/checked.png",
+                Width = 32,
+                Height = 32
+            };
+            var @unchecked = new ImagePacket()
+            {
+                URI = "/ui/unchecked.png",
+                Width = 32,
+                Height = 32
+            };
+            var selected = new ImagePacket()
+            {
+                URI = "/ui/selected.png",
+                Width = 32,
+                Height = 32
+            };
+            var deselected = new ImagePacket()
+            {
+                URI = "/ui/deselected.png",
+                Width = 32,
+                Height = 32
+            };
+
+            var rootElement = new DockPanelPacket
+            {
+                Style = new GUIStylePacket
+                {
+                    Background = System.Drawing.Color.FromArgb(255, 22, 22, 22),
+                    Padding = new Margins(5, 5, 5, 5)
+                },
+                Children = new List<IGUIComponentPacket>
+                {
+                    new TextPacket
+                    {
+                        Text = "<color=white>Header</color>",
+                        Style = new GUIStylePacket {
+                            Background = System.Drawing.Color.DarkBlue,
+                            Padding = new Margins(5,5,5,5)
+                        },
+                        AttachedProperties = new StringPairPacket[] {
+                            new("DockPanel.Dock", "Top")
+                        }
+                    },
+                    new ScrollViewerPacket
+                    {
+                         Children = new IGUIComponentPacket[]
+                         {
+                             new SelectablePacket
+                             {
+                                 Name = "testcheckbox",
+                                 Checked = @checked,
+                                 Unchecked = @unchecked
+                             },
+                             new TextBoxPacket {
+                                 DefaultValue = "123123123",
+                                 Name = "textbox",
+                                 Regex = "^\\d*$",
+                                 Style = new GUIStylePacket{
+                                     Background = System.Drawing.Color.LightGray
+                                 }
+                            },
+                            new SliderPacket {
+                                DefaultValue = 0,
+                                MinValue = 0,
+                                MaxValue = 100,
+                                Name = "slider",
+                                Knob = new()
+                                {
+                                    URI = "/ui/knob.png",
+                                    Width = 16,
+                                    Height = 16
+                                }
+                            },
+                            new ImagePacket {
+                                URI = "/test.png",
+                                Width = 50,
+                                Height = 50
+                            }
+                         }
+                    }
+                }
+            };
+
+            return new OpenWindowPacket("ComprehensiveTestWindow", 1200, 800, rootElement);
         }
 
         /// <summary>

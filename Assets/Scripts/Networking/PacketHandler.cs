@@ -3,9 +3,11 @@ using Fodinae.Assets.Scripts.Networking.Connection;
 using MinesServer.Networking.Server;
 using MinesServer.Networking.Server.Packets;
 using MinesServer.Networking.Server.Packets.Connection;
+using MinesServer.Networking.Server.Packets.GUI;
 using MinesServer.Networking.Server.Packets.World;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.UIElements;
 
 namespace Fodinae.Assets.Scripts.Networking
 {
@@ -15,6 +17,7 @@ namespace Fodinae.Assets.Scripts.Networking
         private int _packetCount = 0;
         private int _worldInitPacketsReceived = 0;
         private int _mapRegionPacketsReceived = 0;
+        private UIDocument _uiDocument;
 
         void Start()
         {
@@ -39,6 +42,12 @@ namespace Fodinae.Assets.Scripts.Networking
             {
                 Debug.LogError("[PacketHandler] MapStorage not found - cannot process map data");
                 return;
+            }
+
+            _uiDocument = FindObjectOfType<UIDocument>();
+            if (_uiDocument == null)
+            {
+                Debug.LogWarning("[PacketHandler] UIDocument not found - window packets will not be displayed");
             }
 
             // Subscribe to events
@@ -90,11 +99,42 @@ namespace Fodinae.Assets.Scripts.Networking
             {
                 HandleHBPacket(hbPacket);
             }
+            else if (packet.Payload is OpenWindowPacket openWindowPacket)
+            {
+                HandleOpenWindowPacket(openWindowPacket);
+            }
             else
             {
                 // Log other packet types for debugging
                 Debug.Log($"[PacketHandler] Packet type {packetType} not handled by this handler");
             }
+        }
+
+        private void HandleOpenWindowPacket(OpenWindowPacket packet)
+        {
+            Debug.Log($"[PacketHandler] Handling OpenWindowPacket: {packet.WindowTag}");
+            
+            if (_uiDocument == null)
+            {
+                _uiDocument = FindObjectOfType<UIDocument>();
+                if (_uiDocument == null)
+                {
+                    Debug.LogError("[PacketHandler] Cannot open window: UIDocument not found");
+                    return;
+                }
+            }
+
+            var builder = new PacketUIBuilder();
+            var element = builder.Build(packet.Content);
+            
+            element.style.width = packet.Width;
+            element.style.height = packet.Height;
+            element.style.position = Position.Absolute;
+            element.style.left = new Length(50, LengthUnit.Percent);
+            element.style.top = new Length(50, LengthUnit.Percent);
+            element.style.translate = new Translate(new Length(-50, LengthUnit.Percent), new Length(-50, LengthUnit.Percent));
+
+            _uiDocument.rootVisualElement.Add(element);
         }
 
         public void HandleWorldInitPacket(WorldInitPacket worldInitPacket)

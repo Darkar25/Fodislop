@@ -1,18 +1,20 @@
+using Fodinae.Assets.Scripts.Networking.Connection;
+using MinesServer.Networking.Client;
+using MinesServer.Networking.Client.Packets;
+using MinesServer.Networking.Client.Packets.GUI;
+using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 [RequireComponent(typeof(UIDocument))]
-[RequireComponent(typeof(UIMocker))]
 public class MainMenu : MonoBehaviour
 {
     private UIDocument _doc;
-    private UIMocker _mocker;
     private VisualElement _mainMenuContainer;
 
     void OnEnable()
     {
         _doc = GetComponent<UIDocument>();
-        _mocker = GetComponent<UIMocker>();
 
         var root = _doc.rootVisualElement;
         root.style.justifyContent = Justify.Center;
@@ -34,17 +36,27 @@ public class MainMenu : MonoBehaviour
 
     private void OnPlayButtonClicked()
     {
-        var builtUI = _mocker.RunMock();
-        _doc.rootVisualElement.Add(builtUI);
+        SendPacket(new OpenHelpClickPacket());
         // Optionally, hide the main menu after clicking play
         _mainMenuContainer.style.display = DisplayStyle.None;
     }
 
     private void OnPlayComplexButtonClicked()
     {
-        var builtUI = _mocker.RunComprehensiveMock();
-        _doc.rootVisualElement.Add(builtUI);
+        SendPacket(new OpenSettingsClickPacket());
         // Optionally, hide the main menu after clicking play
         _mainMenuContainer.style.display = DisplayStyle.None;
+    }
+
+    private void SendPacket(IRootClientPacket packet)
+    {
+        if (ConnectionManager.Instance != null && ConnectionManager.Instance.Connection != null)
+        {
+            ConnectionManager.Instance.Connection.SendAsync(new ClientPacket((uint)DateTimeOffset.UtcNow.Ticks, packet));
+        }
+        else
+        {
+            Debug.LogError("Cannot send packet: ConnectionManager or Connection is null");
+        }
     }
 }
