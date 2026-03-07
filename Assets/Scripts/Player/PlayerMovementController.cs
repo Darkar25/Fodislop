@@ -74,11 +74,26 @@ namespace Fodinae.Assets.Scripts.Player
             if (_moveInput != Vector2.zero)
             {
                 // Move the transform directly for testing
-                // Later for actual player physics mechanics, this could be updated to:
-                // _rigidbody2D.velocity = _moveInput * _moveSpeed;
-                
                 Vector3 movement = new Vector3(_moveInput.x, _moveInput.y, 0f) * (_moveSpeed * Time.deltaTime);
                 transform.position += movement;
+
+                // Rotate in the direction of movement
+                float angle = Mathf.Atan2(_moveInput.y, _moveInput.x) * Mathf.Rad2Deg;
+                // Adjust for sprite orientation (assuming 0 is Right)
+                transform.rotation = Quaternion.Euler(0, 0, angle);
+            }
+
+            // Align to grid if not moving (or always align to nearest center for simplicity now)
+            // But user asked "make the player align to the terrain grid"
+            // If we want it to snap, we could do it here.
+            // However, smooth movement usually doesn't snap every frame unless it's tile-based.
+            // Let's at least make sure it stays on the grid logically or snaps when close to zero input.
+            if (_moveInput == Vector2.zero)
+            {
+                Vector3 pos = transform.position;
+                pos.x = Mathf.Round(pos.x - 0.5f) + 0.5f;
+                pos.y = Mathf.Round(pos.y - 0.5f) + 0.5f;
+                transform.position = pos;
             }
         }
 
