@@ -16,6 +16,8 @@ namespace Fodinae.Assets.Scripts.Game
         [SerializeField] private string _tailPath;
         [SerializeField] private float _rotationSpeed = 1080f;
 
+        private const float VISUAL_ROTATION_OFFSET = -90f;
+
         private bool _isMetadataLoaded = false;
         private CancellationTokenSource _cts;
         private float _targetAngle = 0f;
@@ -27,14 +29,22 @@ namespace Fodinae.Assets.Scripts.Game
 
         public float TargetAngle
         {
-            get => _targetAngle;
-            set => _targetAngle = value;
+            get => _targetAngle - VISUAL_ROTATION_OFFSET;
+            set => _targetAngle = value + VISUAL_ROTATION_OFFSET;
         }
 
         private void Awake()
         {
             if (_spriteRenderer == null)
                 _spriteRenderer = GetComponent<SpriteRenderer>();
+
+            transform.localScale = new Vector3(0.5f, 0.5f, 1f);
+
+            var rb = GetComponent<Rigidbody2D>();
+            if (rb != null)
+            {
+                rb.freezeRotation = true;
+            }
         }
 
         private void Start()
@@ -112,7 +122,7 @@ namespace Fodinae.Assets.Scripts.Game
         public void SetRotation(byte rotation)
         {
             // 0: Right (0), 1: Up (90), 2: Left (180), 3: Down (270)
-            _targetAngle = rotation switch
+            TargetAngle = rotation switch
             {
                 0 => 0f,
                 1 => 90f,
