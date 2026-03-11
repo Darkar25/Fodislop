@@ -342,14 +342,13 @@ namespace MinesServer.Networking.Connection.Client
             }
 
             // Configure specific cell types we use in our test map
-            // Properties bit 0: Passable (1: Passable, 0: Impassable)
             configs[(int)CellType.Empty] = new CellConfigurationPacket
             {
                 Animation = CellAnimationType.None,
                 AnimationSpeed = 0,
                 Color = unchecked((int)0xFF808080), // Gray
                 FrameOffset = 22,
-                Properties = 1
+                Properties = (byte)CellConfigProperties.Passable
             };
 
             configs[(int)CellType.Road] = new CellConfigurationPacket
@@ -358,7 +357,7 @@ namespace MinesServer.Networking.Connection.Client
                 AnimationSpeed = 0,
                 Color = unchecked((int)0xFFCCCCCC), // Light gray
                 FrameOffset = 0,
-                Properties = 1
+                Properties = (byte)CellConfigProperties.Passable
             };
 
             configs[(int)CellType.Boulder1] = new CellConfigurationPacket
@@ -367,7 +366,7 @@ namespace MinesServer.Networking.Connection.Client
                 AnimationSpeed = 0,
                 Color = unchecked((int)0xFF000000), // Black
                 FrameOffset = 0,
-                Properties = 0
+                Properties = (byte)CellConfigProperties.None
             };
 
             configs[(int)CellType.WhiteSand] = new CellConfigurationPacket
@@ -376,7 +375,7 @@ namespace MinesServer.Networking.Connection.Client
                 AnimationSpeed = 0,
                 Color = unchecked((int)0xFFFFFF00), // Yellow
                 FrameOffset = 0,
-                Properties = 1
+                Properties = (byte)CellConfigProperties.Passable
             };
 
             configs[(int)CellType.DarkWhiteSand] = new CellConfigurationPacket
@@ -385,7 +384,7 @@ namespace MinesServer.Networking.Connection.Client
                 AnimationSpeed = 0,
                 Color = unchecked((int)0xFFCCCC00), // Dark yellow
                 FrameOffset = 0,
-                Properties = 1
+                Properties = (byte)CellConfigProperties.Passable
             };
 
             configs[(int)CellType.GrayAcid] = new CellConfigurationPacket

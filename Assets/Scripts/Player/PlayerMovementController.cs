@@ -1,5 +1,6 @@
 using Fodinae.Assets.Scripts.Game;
 using Fodinae.Assets.Scripts.Game.Managers;
+using MinesServer.Networking.Server.Packets.Connection;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -155,8 +156,8 @@ namespace Fodinae.Assets.Scripts.Player
                         var cellType = MapStorage.Instance.GetCell(targetPos.x, targetPos.y);
                         var cellConfig = MapManager.Instance.GetCellConfig(cellType);
 
-                        // Bit 0: Passable (1: Passable, 0: Impassable)
-                        bool isPassable = (cellConfig.Properties & 1) != 0;
+                        // Use official enum for passable property check
+                        bool isPassable = ((CellConfigProperties)cellConfig.Properties).HasFlag(CellConfigProperties.Passable);
 
                         if (isPassable)
                         {
