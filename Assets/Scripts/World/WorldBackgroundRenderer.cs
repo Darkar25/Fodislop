@@ -285,8 +285,8 @@ namespace Fodinae.Assets.Scripts.World
                         continue;
                     }
 
-                    float gx = x * _cellSize - (_chunkSize * _cellSize / 2f);
-                    float gy = y * _cellSize - (_chunkSize * _cellSize / 2f);
+                    float gx = x * _cellSize;
+                    float gy = y * _cellSize;
 
                     mesh.Vertices.Add(new Vector3(gx, gy, 0));
                     mesh.Vertices.Add(new Vector3(gx + _cellSize, gy, 0));

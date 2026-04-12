@@ -183,7 +183,9 @@ namespace Fodinae.Assets.Scripts.World
                     var worldY = chunkMesh.ChunkPosition.y * _chunkSize + y;
 
                     // Skip unloaded or pregener cells
-                    var cellType = _worldLayer[worldX, worldY];
+                    // Invert Y access: Unity worldY to Server Y
+                    int serverY = MapManager.Instance.WorldHeight - 1 - worldY;
+                    var cellType = _worldLayer[worldX, serverY];
                     if (cellType == CellType.Unloaded || cellType == CellType.Pregener) continue;
 
                     // Generate quad vertices
