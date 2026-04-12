@@ -250,12 +250,9 @@ namespace Fodinae.Assets.Scripts.Game.Managers
         public int GetAnimationFrameHeight(CellType cellType)
         {
             var config = GetCellConfig(cellType);
-            if (config.Animation == CellAnimationType.None)
-            {
-                return 0;
-            }
 
             // Frame height is defined in tiles, each tile is 16x16 pixels
+            // FrameOffset > 0 indicates it's an animated or multi-frame texture
             return (int)config.FrameOffset * 16;
         }
 

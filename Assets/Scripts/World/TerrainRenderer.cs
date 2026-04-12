@@ -242,6 +242,12 @@ namespace Fodinae.Assets.Scripts.World
 
                 if (coord == AtlasCoordinate.Empty) continue;
 
+                // Track animated cells for per-frame UV updates
+                if (WorldTextureManager.Instance.HasAnimations(cell.CellType))
+                {
+                    chunkMesh.AnimatedCells.Add(cell);
+                }
+
                 // Find or create material for this atlas
                 int atlasIndex = GetAtlasIndex(coord);
                 
@@ -335,16 +341,13 @@ namespace Fodinae.Assets.Scripts.World
                 }
 
                 // Add UVs (Update for animations)
-                for (int i = 0; i < chunkMesh.Cells.Count; i++)
+                for (int i = 0; i < chunkMesh.AnimatedCells.Count; i++)
                 {
-                    var cell = chunkMesh.Cells[i];
-                    if (MapManager.Instance.HasAnimation(cell.CellType))
+                    var cell = chunkMesh.AnimatedCells[i];
+                    var coord = WorldTextureManager.Instance.GetCellTextureCoordinateSync(cell.CellType, cell.WorldPosition.x, cell.WorldPosition.y);
+                    if (coord != AtlasCoordinate.Empty)
                     {
-                        var coord = WorldTextureManager.Instance.GetCellTextureCoordinateSync(cell.CellType, cell.WorldPosition.x, cell.WorldPosition.y);
-                        if (coord != AtlasCoordinate.Empty)
-                        {
-                            UpdateCellUVs(chunkMesh, cell.VertexStartIndex, coord);
-                        }
+                        UpdateCellUVs(chunkMesh, cell.VertexStartIndex, coord);
                     }
                 }
                 combinedUVs.AddRange(chunkMesh.UVs);
@@ -431,6 +434,7 @@ namespace Fodinae.Assets.Scripts.World
             public List<Vector2> UVs;
             public List<int> AtlasIndices;
             public List<CellInfo> Cells;
+            public List<CellInfo> AnimatedCells;
 
             public ChunkMesh(Vector2Int chunkPosition, int chunkSize, float cellSize)
             {
@@ -440,6 +444,7 @@ namespace Fodinae.Assets.Scripts.World
                 UVs = new List<Vector2>();
                 AtlasIndices = new List<int>();
                 Cells = new List<CellInfo>();
+                AnimatedCells = new List<CellInfo>();
             }
         }
     }

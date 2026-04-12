@@ -83,6 +83,15 @@ namespace Fodinae.Assets.Scripts.World
 
         public event Action<string, Texture2D> OnTextureLoaded;
 
+        public bool HasAnimations(CellType cellType)
+        {
+            if (_textureCache.TryGetTexture(cellType, out var textureInfo))
+            {
+                return textureInfo.AnimationFrames > 1;
+            }
+            return false;
+        }
+
         public AtlasCoordinate GetCellTextureCoordinateSync(CellType cellType, int globalX, int globalY)
         {
             if (cellType == CellType.Unloaded || cellType == CellType.Pregener)
@@ -100,11 +109,10 @@ namespace Fodinae.Assets.Scripts.World
                 if (textureInfo.AnimationFrames > 1)
                 {
                     byte speed = MapManager.Instance.GetAnimationSpeed(cellType);
-                    if (speed > 0)
-                    {
-                        frameIndex = (int)(Time.time * speed) % textureInfo.AnimationFrames;
-                        frameHeight = MapManager.Instance.GetAnimationFrameHeight(cellType);
-                    }
+                    if (speed == 0) speed = 5; // Default speed if not provided
+
+                    frameIndex = (int)(Time.time * speed) % textureInfo.AnimationFrames;
+                    frameHeight = MapManager.Instance.GetAnimationFrameHeight(cellType);
                 }
 
                 // Find which atlas contains this cell
@@ -207,17 +215,15 @@ namespace Fodinae.Assets.Scripts.World
             // It could be a large sub-atlas for Torus wrapping (e.g., 512x352).
             // Passing the full texture ensures it's packed correctly.
 
-            bool isAnimated = MapManager.Instance.HasAnimation(cellType);
-            int frameOffset = MapManager.Instance.GetFrameOffset(cellType);
-            int frameHeight = frameOffset * 16;
+            int frameHeight = MapManager.Instance.GetAnimationFrameHeight(cellType);
 
             var textureInfo = new CellTextureInfo
             {
                 CellType = cellType,
                 BaseTexture = texture,
-                HasVariations = true, // Re-enable variations support
+                HasVariations = texture.width >= 32, // Only wide textures support variations
                 VariationCount = 1,
-                AnimationFrames = isAnimated && frameHeight > 0 ? texture.height / frameHeight : 1,
+                AnimationFrames = frameHeight > 0 ? texture.height / frameHeight : 1,
                 FramesPerRow = 1,
                 FrameSize = 16
             };
