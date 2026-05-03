@@ -77,13 +77,13 @@ namespace Fodinae.Assets.Scripts.Player
             {
                 _robot.TargetPosition = targetGridPos;
             }
+            ClientPosition = new Vector2Int(Mathf.FloorToInt(transform.position.x), Mathf.FloorToInt(transform.position.y));
         }
 
         private void Update()
         {
             ReadInput();
             ApplyMovement();
-            ClientPosition = new Vector2Int(Mathf.FloorToInt(transform.position.x), Mathf.FloorToInt(transform.position.y));
         }
 
         public void Initialize(uint botId)
@@ -94,6 +94,8 @@ namespace Fodinae.Assets.Scripts.Player
         public void UpdateServerPosition(Vector2Int position)
         {
             ServerPosition = position;
+            // Reconcile ClientPosition with ServerPosition (converted to Unity grid coordinates)
+            ClientPosition = new Vector2Int(position.x, MapManager.Instance.WorldHeight - 1 - position.y);
         }
 
         private void ReadInput()
@@ -160,8 +162,8 @@ namespace Fodinae.Assets.Scripts.Player
                             _ => direction.y > 0 ? Direction.Up : Direction.Down
                         };
 
-                        int currentUnityX = Mathf.FloorToInt(transform.position.x);
-                        int currentUnityY = Mathf.FloorToInt(transform.position.y);
+                        int currentUnityX = ClientPosition.x;
+                        int currentUnityY = ClientPosition.y;
 
                         ushort currentX = (ushort)Mathf.Clamp(currentUnityX, 0, ushort.MaxValue);
                         ushort currentServerY = (ushort)Mathf.Clamp(MapManager.Instance.WorldHeight - 1 - currentUnityY, 0, ushort.MaxValue);
@@ -217,6 +219,7 @@ namespace Fodinae.Assets.Scripts.Player
                             // Use absolute grid coordinates to ensure alignment
                             _robot.TargetPosition = new Vector3(targetUnityX + 0.5f, targetUnityY + 0.5f, transform.position.z);
                             _isMoving = true;
+                            ClientPosition = new Vector2Int(targetUnityX, targetUnityY);
                             ConnectionManager.Instance.SendPacket(new ActionClientPacket(currentX, currentServerY, new MovePacket(targetServerX, targetServerY)));
                         }
                     }
