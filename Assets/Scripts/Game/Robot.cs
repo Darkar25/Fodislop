@@ -10,7 +10,10 @@ namespace Fodinae.Assets.Scripts.Game
     {
         [SerializeField] private uint _botId;
         [SerializeField] private int _playerId;
+        [SerializeField] private byte _clanId;
         [SerializeField] private SpriteRenderer _spriteRenderer;
+        private SpriteRenderer _clanRenderer;
+        private TextMesh _nicknameText;
         [SerializeField] private string _nickname;
         [SerializeField] private string _skinPath;
         [SerializeField] private string _tailPath;
@@ -27,6 +30,7 @@ namespace Fodinae.Assets.Scripts.Game
 
         public uint BotId => _botId;
         public int PlayerId => _playerId;
+        public byte ClanId => _clanId;
         public string Nickname => _nickname;
         public bool IsMetadataLoaded => _isMetadataLoaded;
         public bool IsLocalPlayer => gameObject.CompareTag("Player");
@@ -62,6 +66,32 @@ namespace Fodinae.Assets.Scripts.Game
             {
                 rb.freezeRotation = true;
             }
+
+            InitializeVisualElements();
+        }
+
+        private void InitializeVisualElements()
+        {
+            // Create Nickname TextMesh
+            var textGo = new GameObject("Nickname");
+            textGo.transform.SetParent(transform);
+            _nicknameText = textGo.AddComponent<TextMesh>();
+            _nicknameText.anchor = TextAnchor.MiddleLeft;
+            _nicknameText.alignment = TextAlignment.Left;
+            _nicknameText.fontSize = 64;
+            _nicknameText.characterSize = 0.1f;
+            _nicknameText.color = Color.white;
+
+            // Ensure text is rendered on top
+            var textRenderer = textGo.GetComponent<MeshRenderer>();
+            textRenderer.sortingOrder = 100;
+
+            // Create Clan Icon SpriteRenderer
+            var clanGo = new GameObject("ClanIcon");
+            clanGo.transform.SetParent(transform);
+            _clanRenderer = clanGo.AddComponent<SpriteRenderer>();
+            _clanRenderer.sortingOrder = 100;
+            _clanRenderer.transform.localScale = Vector3.one * 0.8f;
         }
 
         private void Start()
@@ -78,7 +108,7 @@ namespace Fodinae.Assets.Scripts.Game
             // If pre-configured (like in Player prefab), load skin immediately
             if (!string.IsNullOrEmpty(_skinPath))
             {
-                LoadSkin();
+                LoadMetadataAssets();
             }
             _targetAngle = transform.eulerAngles.z;
 
@@ -142,6 +172,25 @@ namespace Fodinae.Assets.Scripts.Game
             }
 
             transform.rotation = Quaternion.Euler(0, 0, nowRotationAngle);
+
+            UpdateLabelsPosition();
+        }
+
+        private void UpdateLabelsPosition()
+        {
+            if (_nicknameText != null)
+            {
+                // Position: to the right of the body, slightly higher than center
+                _nicknameText.transform.position = transform.position + new Vector3(0.6f, 0.5f, 0);
+                _nicknameText.transform.rotation = Quaternion.identity;
+            }
+
+            if (_clanRenderer != null)
+            {
+                // Position: to the right of the body, slightly lower than center
+                _clanRenderer.transform.position = transform.position + new Vector3(0.6f, -0.5f, 0);
+                _clanRenderer.transform.rotation = Quaternion.identity;
+            }
         }
 
         public void Initialize(uint botId)
@@ -156,11 +205,15 @@ namespace Fodinae.Assets.Scripts.Game
             {
                 _spriteRenderer.color = new Color(1, 1, 1, 0.5f);
             }
+
+            if (_nicknameText != null) _nicknameText.text = "";
+            if (_clanRenderer != null) _clanRenderer.sprite = null;
         }
 
-        public void SetMetadata(int playerId, string nickname, string skinPath, string tailPath)
+        public void SetMetadata(int playerId, byte clanid, string nickname, string skinPath, string tailPath)
         {
             _playerId = playerId;
+            _clanId = clanid;
             _nickname = nickname;
             _skinPath = skinPath;
             _tailPath = tailPath;
@@ -171,7 +224,12 @@ namespace Fodinae.Assets.Scripts.Game
                 _spriteRenderer.color = Color.white;
             }
 
-            LoadSkin();
+            if (_nicknameText != null)
+            {
+                _nicknameText.text = nickname;
+            }
+
+            LoadMetadataAssets();
         }
 
         public void SetPosition(ushort x, ushort y)
@@ -195,26 +253,34 @@ namespace Fodinae.Assets.Scripts.Game
             };
         }
 
-        private void LoadSkin()
+        private void LoadMetadataAssets()
         {
-            if (string.IsNullOrEmpty(_skinPath)) return;
-
             _cts?.Cancel();
             _cts = CancellationTokenSource.CreateLinkedTokenSource(this.GetCancellationTokenOnDestroy());
 
-            LoadSkinAsync(_skinPath, _cts.Token).Forget();
+            LoadMetadataAssetsAsync(_cts.Token).Forget();
         }
 
-        private async UniTaskVoid LoadSkinAsync(string skinPath, CancellationToken token)
+        private async UniTaskVoid LoadMetadataAssetsAsync(CancellationToken token)
         {
-            var texture = await ClientAssetLoader.Instance.GetTextureAsync(skinPath, token);
-            if (token.IsCancellationRequested || texture == null) return;
+            var skinTask = string.IsNullOrEmpty(_skinPath) ? UniTask.FromResult<Texture2D>(null) : ClientAssetLoader.Instance.GetTextureAsync(_skinPath, token);
+            var tailTask = string.IsNullOrEmpty(_tailPath) ? UniTask.FromResult<Texture2D>(null) : ClientAssetLoader.Instance.GetTextureAsync(_tailPath, token);
+            var clanTask = _clanId == 0 ? UniTask.FromResult<Texture2D>(null) : ClientAssetLoader.Instance.GetTextureAsync($"/clan/{_clanId}.png", token);
 
-            if (_spriteRenderer != null)
+            var (skinTexture, tailTexture, clanTexture) = await UniTask.WhenAll(skinTask, tailTask, clanTask);
+
+            if (token.IsCancellationRequested) return;
+
+            if (skinTexture != null && _spriteRenderer != null)
             {
-                // Create sprite with center pivot and PPU matching texture width to occupy exactly 1x1 units
-                var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f), texture.width);
+                var sprite = Sprite.Create(skinTexture, new Rect(0, 0, skinTexture.width, skinTexture.height), new Vector2(0.5f, 0.5f), skinTexture.width);
                 _spriteRenderer.sprite = sprite;
+            }
+
+            if (clanTexture != null && _clanRenderer != null)
+            {
+                var sprite = Sprite.Create(clanTexture, new Rect(0, 0, clanTexture.width, clanTexture.height), new Vector2(0f, 0.5f), clanTexture.width);
+                _clanRenderer.sprite = sprite;
             }
         }
 
