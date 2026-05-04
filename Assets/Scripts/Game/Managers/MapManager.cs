@@ -56,6 +56,9 @@ namespace Fodinae.Assets.Scripts.Game.Managers
     {
         Debug.Log($"[MapManager] LoadWorldInit called: {packet.DisplayName} ({packet.CodeName}) [{packet.Width}x{packet.Height}]");
         
+        // Clear all packs when a new world is initialized
+        PackManager.Instance.ClearAllPacks();
+
         // Validate packet data
         if (packet == null)
         {
