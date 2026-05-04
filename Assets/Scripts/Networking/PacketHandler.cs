@@ -297,6 +297,16 @@ namespace Fodinae.Assets.Scripts.Networking
                         allMapDataProcessed = false;
                     }
                 }
+                else if (p is PackPacket packPacket)
+                {
+                    Debug.Log($"[PacketHandler] Processing PackPacket: X={packPacket.X}, Y={packPacket.Y}, Type={packPacket.PackCode}");
+                    PackManager.Instance.AddOrUpdatePack(packPacket.X, packPacket.Y, packPacket.PackCode, packPacket.Variant, packPacket.LinkedClan);
+                }
+                else if (p is RemovePackPacket removePackPacket)
+                {
+                    Debug.Log($"[PacketHandler] Processing RemovePackPacket: X={removePackPacket.X}, Y={removePackPacket.Y}");
+                    PackManager.Instance.RemovePack(removePackPacket.X, removePackPacket.Y);
+                }
             }
             
             // Only trigger world data loaded event if we successfully processed all map data

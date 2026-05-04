@@ -148,6 +148,12 @@ namespace MinesServer.Networking.Connection.Client
                         [CellType.Empty] = 20,
                         [CellType.Road] = 100
                     })));
+
+                    // Send test packs
+                    OnReceived?.Invoke(new ServerPacket(new HBPacket(new IHBPacket[] {
+                        new PackPacket(27, 50, PackType.Teleport, 0, 0),
+                        new PackPacket(25, 48, PackType.Market, 1, 1)
+                    })));
                     break;
                 case RuntimeAssetRequestPacket runtimeAssets:
                     HandleAssetRequest(runtimeAssets).Forget();
