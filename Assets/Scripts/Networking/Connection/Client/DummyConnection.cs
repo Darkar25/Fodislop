@@ -410,6 +410,7 @@ namespace MinesServer.Networking.Connection.Client
                 AnimationSpeed = 0,
                 Color = unchecked((int)0xFF000000),
                 FrameOffset = 0,
+                Distortion = CellDistortionType.Block,
                 Properties = CellConfigProperties.None
             };
             configs[(int)CellType.WhiteSand] = new CellConfigurationPacket
@@ -450,6 +451,7 @@ namespace MinesServer.Networking.Connection.Client
                 AnimationSpeed = 10,
                 Color = unchecked((int)0xFFFF4500),
                 FrameOffset = 1,
+                Distortion = CellDistortionType.Cause,
                 Properties = CellConfigProperties.None
             };
 

@@ -349,6 +349,67 @@ namespace Fodinae.Assets.Scripts.World
             }
         }
 
+        private Vector3 GetVertexOffset(int x, int y)
+        {
+            if (MapManager.Instance == null || MapStorage.Instance == null || !MapStorage.Instance.IsReady)
+                return Vector3.zero;
+
+            int h = MapManager.Instance.WorldHeight;
+
+            // Surrounding cells in Unity coords:
+            // TL: (x-1, y), TR: (x, y)
+            // BL: (x-1, y-1), BR: (x, y-1)
+            // Map to serverY: serverY = h - 1 - unityY
+
+            CellDistortionType tl = GetDistortion(x - 1, h - 1 - y);
+            CellDistortionType tr = GetDistortion(x, h - 1 - y);
+            CellDistortionType bl = GetDistortion(x - 1, h - y);
+            CellDistortionType br = GetDistortion(x, h - y);
+
+            if (tl == CellDistortionType.Block || tr == CellDistortionType.Block ||
+                bl == CellDistortionType.Block || br == CellDistortionType.Block)
+            {
+                return Vector3.zero;
+            }
+
+            int xSign = 0;
+            int ySign = 0;
+
+            if (bl == CellDistortionType.Cause) { xSign -= 1; ySign += 1; }
+            if (br == CellDistortionType.Cause) { xSign += 1; ySign += 1; }
+            if (tl == CellDistortionType.Cause) { xSign -= 1; ySign -= 1; }
+            if (tr == CellDistortionType.Cause) { xSign += 1; ySign -= 1; }
+
+            if (xSign == 0 && ySign == 0) return Vector3.zero;
+
+            // Pseudo-random rx, ry using consistent hash
+            uint seed = (uint)(x * 374761397 + y * 668265263);
+            seed = (seed ^ (seed >> 13)) * 1274126177;
+            seed = seed ^ (seed >> 16);
+
+            // random multiple of 2px up to including 8px (32px = 1 unit)
+            float rx = ((seed % 4) + 1) * 0.0625f; // 0.0625 = 2/32
+
+            uint seed2 = seed * 2654435761u;
+            float ry = ((seed2 % 4) + 1) * 0.0625f;
+
+            float fx = xSign > 0 ? rx : (xSign < 0 ? -rx : 0);
+            float fy = ySign > 0 ? ry : (ySign < 0 ? -ry : 0);
+
+            return new Vector3(fx, fy, 0);
+        }
+
+        private CellDistortionType GetDistortion(int x, int serverY)
+        {
+            if (x < 0 || x >= MapManager.Instance.WorldWidth || serverY < 0 || serverY >= MapManager.Instance.WorldHeight)
+                return CellDistortionType.Neutral;
+
+            CellType type = MapStorage.Instance.GetCell(x, serverY);
+            if (type == CellType.Unloaded || type == CellType.Pregener) return CellDistortionType.Neutral;
+
+            return MapManager.Instance.GetCellConfig(type).Distortion;
+        }
+
         private int AddQuad(int x, int y, int serverY, CellType cellType, float zOffset, int vertexCount, HashSet<CellType> pendingLoads, List<TextureAtlas> atlases)
         {
             AtlasCoordinate coord = WorldTextureManager.Instance.GetCellTextureCoordinateSync(cellType, x, serverY);
@@ -381,10 +442,10 @@ namespace Fodinae.Assets.Scripts.World
                 _materials[atlasIndex].SetTexture("_BaseMap", atlasTex);
             }
 
-            _vertices.Add(new Vector3(x * _cellSize, y * _cellSize, zOffset));
-            _vertices.Add(new Vector3((x + 1) * _cellSize, y * _cellSize, zOffset));
-            _vertices.Add(new Vector3((x + 1) * _cellSize, (y + 1) * _cellSize, zOffset));
-            _vertices.Add(new Vector3(x * _cellSize, (y + 1) * _cellSize, zOffset));
+            _vertices.Add(new Vector3(x * _cellSize, y * _cellSize, zOffset) + GetVertexOffset(x, y));
+            _vertices.Add(new Vector3((x + 1) * _cellSize, y * _cellSize, zOffset) + GetVertexOffset(x + 1, y));
+            _vertices.Add(new Vector3((x + 1) * _cellSize, (y + 1) * _cellSize, zOffset) + GetVertexOffset(x + 1, y + 1));
+            _vertices.Add(new Vector3(x * _cellSize, (y + 1) * _cellSize, zOffset) + GetVertexOffset(x, y + 1));
 
             _uvs.Add(new Vector2(0, 0));
             _uvs.Add(new Vector2(1, 0));
