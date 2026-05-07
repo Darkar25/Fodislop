@@ -1,4 +1,5 @@
 using MinesServer.Networking.Client.Packets;
+using MinesServer.Networking.Client.Packets.Actions;
 using MinesServer.Networking.Server.Packets;
 using MinesServer.Networking.Server.Packets.World;
 using System;
@@ -6,6 +7,8 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Fodinae.Assets.Scripts.Networking.Connection;
+using Fodinae.Assets.Scripts.Player;
+using Fodinae.Assets.Scripts.Game.Managers;
 
 namespace Fodinae.Assets.Scripts.Networking
 {
@@ -69,6 +72,33 @@ namespace Fodinae.Assets.Scripts.Networking
             {
                 ConnectionManager.Instance.OnPacketReceived -= OnPacketReceived;
             }
+        }
+
+        /// <summary>
+        /// Wraps an action packet in an ActionClientPacket with the player's current logical position and sends it.
+        /// </summary>
+        /// <param name="action">The action to send.</param>
+        public void SendAction(IActionClientPacket action)
+        {
+            var player = GameObject.FindGameObjectWithTag("Player");
+            if (player == null)
+            {
+                Debug.LogError("[NetworkService] Cannot send action: Player object not found.");
+                return;
+            }
+
+            var controller = player.GetComponent<PlayerMovementController>();
+            if (controller == null)
+            {
+                Debug.LogError("[NetworkService] Cannot send action: PlayerMovementController not found on player.");
+                return;
+            }
+
+            Vector2Int clientPos = controller.ClientPosition;
+            ushort serverX = (ushort)clientPos.x;
+            ushort serverY = (ushort)(MapManager.Instance.WorldHeight - 1 - clientPos.y);
+
+            Send(new ActionClientPacket(serverX, serverY, action));
         }
 
         /// <summary>

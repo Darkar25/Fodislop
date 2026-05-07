@@ -174,7 +174,7 @@ namespace Fodinae.Assets.Scripts.Player
 
                     if (_lastSentDirection != packetDirection)
                     {
-                        NetworkService.Instance.Send(new ActionClientPacket(currentX, currentServerY, new RotatePacket(packetDirection)));
+                        NetworkService.Instance.SendAction(new RotatePacket(packetDirection));
                         _lastSentDirection = packetDirection;
                         _lastMoveTime = Time.time;
                     }
@@ -227,7 +227,7 @@ namespace Fodinae.Assets.Scripts.Player
                         ClientPosition = new Vector2Int(targetUnityX, targetUnityY);
                         OnPlayerMoved?.Invoke(oldPos, ClientPosition);
                         _lastMoveTime = Time.time;
-                        NetworkService.Instance.Send(new ActionClientPacket(currentX, currentServerY, new MovePacket(targetServerX, targetServerY)));
+                        NetworkService.Instance.SendAction(new MovePacket(targetServerX, targetServerY));
                     }
                 }
             }
