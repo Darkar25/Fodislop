@@ -82,6 +82,36 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
             }
 
+            float3 SampleFlowMap(float2 worldPos)
+            {
+                float2 size = float2(12.0, 10.0);
+                float2 uv = worldPos / size;
+
+                // Manual bilinear filtering for Point-filtered atlas
+                float2 texelSize = 1.0 / size;
+                float2 pixel = uv * size - 0.5;
+                float2 f = frac(pixel);
+                pixel = floor(pixel);
+
+                float2 uv00 = (pixel + float2(0.5, 0.5)) * texelSize;
+                float2 uv10 = (pixel + float2(1.5, 0.5)) * texelSize;
+                float2 uv01 = (pixel + float2(0.5, 1.5)) * texelSize;
+                float2 uv11 = (pixel + float2(1.5, 1.5)) * texelSize;
+
+                // Wrap UVs
+                uv00 = frac(uv00);
+                uv10 = frac(uv10);
+                uv01 = frac(uv01);
+                uv11 = frac(uv11);
+
+                float3 s00 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv00 * _FlowMapRect.zw).rgb;
+                float3 s10 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv10 * _FlowMapRect.zw).rgb;
+                float3 s01 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv01 * _FlowMapRect.zw).rgb;
+                float3 s11 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv11 * _FlowMapRect.zw).rgb;
+
+                return lerp(lerp(s00, s10, f.x), lerp(s01, s11, f.x), f.y);
+            }
+
             Varyings vert (Attributes input)
             {
                 Varyings output;
@@ -169,12 +199,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 else if (animType == 2) // Shimmer
                 {
                     float2 pixelWorldPos = input.worldPos.xy + input.uv;
-
-                    // Sample flow map (12x10 tiles)
-                    // We treat the world as if it's divided into 12x10 blocks for the flow map
-                    float2 flowUV = frac(pixelWorldPos / float2(12.0, 10.0));
-                    float2 finalFlowUV = _FlowMapRect.xy + flowUV * _FlowMapRect.zw;
-                    float3 flowSample = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, finalFlowUV).rgb;
+                    float3 flowSample = SampleFlowMap(pixelWorldPos);
 
                     float3 flowHsv = RgbToHsv(flowSample);
                     float hueAngle = flowHsv.x * 6.28318548;
@@ -269,6 +294,36 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
             }
 
+            float3 SampleFlowMap(float2 worldPos)
+            {
+                float2 size = float2(12.0, 10.0);
+                float2 uv = worldPos / size;
+
+                // Manual bilinear filtering for Point-filtered atlas
+                float2 texelSize = 1.0 / size;
+                float2 pixel = uv * size - 0.5;
+                float2 f = frac(pixel);
+                pixel = floor(pixel);
+
+                float2 uv00 = (pixel + float2(0.5, 0.5)) * texelSize;
+                float2 uv10 = (pixel + float2(1.5, 0.5)) * texelSize;
+                float2 uv01 = (pixel + float2(0.5, 1.5)) * texelSize;
+                float2 uv11 = (pixel + float2(1.5, 1.5)) * texelSize;
+
+                // Wrap UVs
+                uv00 = frac(uv00);
+                uv10 = frac(uv10);
+                uv01 = frac(uv01);
+                uv11 = frac(uv11);
+
+                float3 s00 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv00 * _FlowMapRect.zw).rgb;
+                float3 s10 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv10 * _FlowMapRect.zw).rgb;
+                float3 s01 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv01 * _FlowMapRect.zw).rgb;
+                float3 s11 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv11 * _FlowMapRect.zw).rgb;
+
+                return lerp(lerp(s00, s10, f.x), lerp(s01, s11, f.x), f.y);
+            }
+
             Varyings vert (Attributes input)
             {
                 Varyings output;
@@ -347,11 +402,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 else if (animType == 2) // Shimmer
                 {
                     float2 pixelWorldPos = input.worldPos.xy + input.uv;
-
-                    // Sample flow map (12x10 tiles)
-                    float2 flowUV = frac(pixelWorldPos / float2(12.0, 10.0));
-                    float2 finalFlowUV = _FlowMapRect.xy + flowUV * _FlowMapRect.zw;
-                    float3 flowSample = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, finalFlowUV).rgb;
+                    float3 flowSample = SampleFlowMap(pixelWorldPos);
 
                     float3 flowHsv = RgbToHsv(flowSample);
                     float hueAngle = flowHsv.x * 6.28318548;
