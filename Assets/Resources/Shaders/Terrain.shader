@@ -3,6 +3,8 @@ Shader "Universal Render Pipeline/Custom/Terrain"
     Properties
     {
         [MainTexture] _BaseMap ("Texture Atlas", 2D) = "white" {}
+        _FlowMapRect ("Flow Map Rect", Vector) = (0,0,0,0)
+        _ShimmerColor ("Shimmer Color", Color) = (1,1,1,1)
         _FallbackColor ("Fallback Color", Color) = (1, 1, 0, 1)
         _DebugColor ("Debug Color", Color) = (1, 0, 1, 1)
         [ToggleUI] _DebugMode ("Debug Mode", Float) = 0
@@ -35,6 +37,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             {
                 float4 positionOS   : POSITION;
                 float2 uv           : TEXCOORD0;
+                float4 color        : COLOR;
                 float4 subAtlasRect : TEXCOORD1;
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPosAttr : TEXCOORD3;
@@ -45,6 +48,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             {
                 float4 positionCS   : SV_POSITION;
                 float2 uv           : TEXCOORD0;
+                float4 color        : COLOR;
                 float4 subAtlasRect : TEXCOORD1;
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPos     : TEXCOORD3;
@@ -55,6 +59,8 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             SAMPLER(sampler_BaseMap);
 
             CBUFFER_START(UnityPerMaterial)
+                float4 _FlowMapRect;
+                float4 _ShimmerColor;
                 float4 _FallbackColor;
                 float4 _DebugColor;
                 float _DebugMode;
@@ -78,11 +84,42 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
             }
 
+            float3 SampleFlowMap(float2 worldPos)
+            {
+                float2 size = float2(12.0, 10.0);
+                float2 uv = worldPos / size;
+
+                // Manual bilinear filtering for Point-filtered atlas
+                float2 texelSize = 1.0 / size;
+                float2 pixel = uv * size - 0.5;
+                float2 f = frac(pixel);
+                pixel = floor(pixel);
+
+                float2 uv00 = (pixel + float2(0.5, 0.5)) * texelSize;
+                float2 uv10 = (pixel + float2(1.5, 0.5)) * texelSize;
+                float2 uv01 = (pixel + float2(0.5, 1.5)) * texelSize;
+                float2 uv11 = (pixel + float2(1.5, 1.5)) * texelSize;
+
+                // Wrap UVs
+                uv00 = frac(uv00);
+                uv10 = frac(uv10);
+                uv01 = frac(uv01);
+                uv11 = frac(uv11);
+
+                float3 s00 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv00 * _FlowMapRect.zw).rgb;
+                float3 s10 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv10 * _FlowMapRect.zw).rgb;
+                float3 s01 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv01 * _FlowMapRect.zw).rgb;
+                float3 s11 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv11 * _FlowMapRect.zw).rgb;
+
+                return lerp(lerp(s00, s10, f.x), lerp(s01, s11, f.x), f.y);
+            }
+
             Varyings vert (Attributes input)
             {
                 Varyings output;
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
                 output.uv = input.uv;
+                output.color = input.color;
                 output.subAtlasRect = input.subAtlasRect;
                 output.tileSizeUV = input.tileSizeUV;
                 output.worldPos = input.worldPosAttr;
@@ -164,10 +201,23 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 else if (animType == 2) // Shimmer
                 {
                     float2 pixelWorldPos = input.worldPos.xy + input.uv;
-                    float posScalar = length(pixelWorldPos);
-                    float shimmer = sin(posScalar * 6.28318 + _Time.x * speed);
-                    shimmer = max(0, shimmer);
-                    finalRgb += shimmer * 0.3; // Additive highlight
+                    float3 flowSample = SampleFlowMap(pixelWorldPos);
+
+                    float3 flowHsv = RgbToHsv(flowSample);
+                    float hueAngle = flowHsv.x * 6.28318548;
+                    float chroma = max(flowSample.r, max(flowSample.g, flowSample.b)) - min(flowSample.r, min(flowSample.g, flowSample.b));
+
+                    float wave = sin(-(hueAngle + _Time.y * speed * 0.05));
+                    wave = (wave + 1.0) * 0.5;
+                    float waveCubed = wave * wave * wave;
+
+                    float luminance = dot(texColor.rgb, float3(0.299, 0.587, 0.114));
+                    float invLum = 1.0 - luminance;
+                    float lumMask = 1.0 - invLum * invLum * invLum;
+
+                    float factor = waveCubed * lumMask * chroma;
+
+                    finalRgb = lerp(finalRgb, _ShimmerColor.rgb, factor);
                 }
                 else if (animType == 3) // Rainbow
                 {
@@ -200,6 +250,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             {
                 float4 positionOS   : POSITION;
                 float2 uv           : TEXCOORD0;
+                float4 color        : COLOR;
                 float4 subAtlasRect : TEXCOORD1;
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPosAttr : TEXCOORD3;
@@ -210,6 +261,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             {
                 float4 positionCS   : SV_POSITION;
                 float2 uv           : TEXCOORD0;
+                float4 color        : COLOR;
                 float4 subAtlasRect : TEXCOORD1;
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPos     : TEXCOORD3;
@@ -220,6 +272,8 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             SAMPLER(sampler_BaseMap);
 
             CBUFFER_START(UnityPerMaterial)
+                float4 _FlowMapRect;
+                float4 _ShimmerColor;
                 float4 _FallbackColor;
                 float4 _DebugColor;
                 float _DebugMode;
@@ -243,11 +297,42 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 return c.z * lerp(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
             }
 
+            float3 SampleFlowMap(float2 worldPos)
+            {
+                float2 size = float2(12.0, 10.0);
+                float2 uv = worldPos / size;
+
+                // Manual bilinear filtering for Point-filtered atlas
+                float2 texelSize = 1.0 / size;
+                float2 pixel = uv * size - 0.5;
+                float2 f = frac(pixel);
+                pixel = floor(pixel);
+
+                float2 uv00 = (pixel + float2(0.5, 0.5)) * texelSize;
+                float2 uv10 = (pixel + float2(1.5, 0.5)) * texelSize;
+                float2 uv01 = (pixel + float2(0.5, 1.5)) * texelSize;
+                float2 uv11 = (pixel + float2(1.5, 1.5)) * texelSize;
+
+                // Wrap UVs
+                uv00 = frac(uv00);
+                uv10 = frac(uv10);
+                uv01 = frac(uv01);
+                uv11 = frac(uv11);
+
+                float3 s00 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv00 * _FlowMapRect.zw).rgb;
+                float3 s10 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv10 * _FlowMapRect.zw).rgb;
+                float3 s01 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv01 * _FlowMapRect.zw).rgb;
+                float3 s11 = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, _FlowMapRect.xy + uv11 * _FlowMapRect.zw).rgb;
+
+                return lerp(lerp(s00, s10, f.x), lerp(s01, s11, f.x), f.y);
+            }
+
             Varyings vert (Attributes input)
             {
                 Varyings output;
                 output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
                 output.uv = input.uv;
+                output.color = input.color;
                 output.subAtlasRect = input.subAtlasRect;
                 output.tileSizeUV = input.tileSizeUV;
                 output.worldPos = input.worldPosAttr;
@@ -320,10 +405,23 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 else if (animType == 2) // Shimmer
                 {
                     float2 pixelWorldPos = input.worldPos.xy + input.uv;
-                    float posScalar = length(pixelWorldPos);
-                    float shimmer = sin(posScalar * 6.28318 + _Time.x * speed);
-                    shimmer = max(0, shimmer);
-                    finalRgb += shimmer * 0.3; // Additive highlight
+                    float3 flowSample = SampleFlowMap(pixelWorldPos);
+
+                    float3 flowHsv = RgbToHsv(flowSample);
+                    float hueAngle = flowHsv.x * 6.28318548;
+                    float chroma = max(flowSample.r, max(flowSample.g, flowSample.b)) - min(flowSample.r, min(flowSample.g, flowSample.b));
+
+                    float wave = sin(-(hueAngle + _Time.y * speed * 0.05));
+                    wave = (wave + 1.0) * 0.5;
+                    float waveCubed = wave * wave * wave;
+
+                    float luminance = dot(texColor.rgb, float3(0.299, 0.587, 0.114));
+                    float invLum = 1.0 - luminance;
+                    float lumMask = 1.0 - invLum * invLum * invLum;
+
+                    float factor = waveCubed * lumMask * chroma;
+
+                    finalRgb = (finalRgb * (1.0 - factor)) + (factor * _ShimmerColor.rgb);
                 }
                 else if (animType == 3) // Rainbow
                 {
