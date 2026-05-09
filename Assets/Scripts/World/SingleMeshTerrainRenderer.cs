@@ -10,6 +10,7 @@ using MinesServer.Networking.Server.Packets.Connection;
 
 namespace Fodinae.Assets.Scripts.World
 {
+    [ExecuteAlways]
     [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
     public class SingleMeshTerrainRenderer : MonoBehaviour
     {
@@ -44,6 +45,14 @@ namespace Fodinae.Assets.Scripts.World
         private void OnValidate()
         {
             _needsRebuild = true;
+            // Immediate update if possible
+            if (!Application.isPlaying && _materials != null)
+            {
+                foreach (var mat in _materials)
+                {
+                    if (mat != null) mat.SetColor("_ShimmerColor", _shimmerHighlightColor);
+                }
+            }
         }
 
         private void Awake()
