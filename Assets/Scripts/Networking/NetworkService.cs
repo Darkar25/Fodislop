@@ -55,23 +55,24 @@ namespace Fodinae.Assets.Scripts.Networking
             DontDestroyOnLoad(gameObject);
         }
 
-        void Start()
+        void OnEnable()
         {
-            if (ConnectionManager.Instance != null)
-            {
-                ConnectionManager.Instance.OnPacketReceived += OnPacketReceived;
-            }
-            else
-            {
-                Debug.LogError("[NetworkService] ConnectionManager.Instance is null!");
-            }
-        }
-
-        void OnDestroy()
-        {
+            if (_instance != this) return; // Prevent duplicates from overriding the main singleton
             if (ConnectionManager.Instance != null)
             {
                 ConnectionManager.Instance.OnPacketReceived -= OnPacketReceived;
+                ConnectionManager.Instance.OnPacketReceived += OnPacketReceived;
+            }
+        }
+
+        void OnDisable()
+        {
+            if (_instance != this) return;
+            // Use FindObjectOfType instead of .Instance to avoid instantiating singletons during app teardown
+            var cm = FindObjectOfType<ConnectionManager>();
+            if (cm != null)
+            {
+                cm.OnPacketReceived -= OnPacketReceived;
             }
         }
 

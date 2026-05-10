@@ -113,7 +113,7 @@ namespace Fodinae.Assets.Scripts.Player
             }
             Vector3 targetPosition = _target.position + new Vector3(_offset.x, _offset.y, 0f);
             Vector3 desiredPosition = new Vector3(targetPosition.x, targetPosition.y, _originalZ);
-            float t = _smoothSpeed;
+            float t = _smoothSpeed * Time.deltaTime;
             transform.position = Vector3.Lerp(transform.position, desiredPosition, t);
         }
 

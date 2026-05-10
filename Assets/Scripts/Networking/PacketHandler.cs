@@ -23,7 +23,7 @@ namespace Fodinae.Assets.Scripts.Networking
         private int _mapRegionPacketsReceived = 0;
         private UIDocument _uiDocument;
 
-        void Start()
+        void Awake()
         {
             Debug.Log("[PacketHandler] Starting initialization...");
             
@@ -70,9 +70,9 @@ namespace Fodinae.Assets.Scripts.Networking
         {
             if (!_isInitialized) return;
 
-            if (NetworkService.Instance != null)
+            var ns = FindObjectOfType<NetworkService>();
+            if (ns != null)
             {
-                var ns = NetworkService.Instance;
                 ns.Unsubscribe<WorldInitPacket>(HandleWorldInitPacket);
                 ns.Unsubscribe<HBPacket>(HandleHBPacket);
                 ns.Unsubscribe<RobotInfoPacket>(HandleRobotInfoPacket);
@@ -84,13 +84,14 @@ namespace Fodinae.Assets.Scripts.Networking
                 ns.Unsubscribe<PackPacket>(HandlePackPacket);
                 ns.Unsubscribe<RemovePackPacket>(HandleRemovePackPacket);
             }
-            
-            if (MapManager.Instance != null)
+
+            var mm = FindObjectOfType<MapManager>();
+            if (mm != null)
             {
-                MapManager.Instance.OnWorldInitialized -= OnWorldInitialized;
-                MapManager.Instance.OnWorldDataLoaded -= OnWorldDataLoaded;
+                mm.OnWorldInitialized -= OnWorldInitialized;
+                mm.OnWorldDataLoaded -= OnWorldDataLoaded;
             }
-            
+
             Debug.Log($"[PacketHandler] Destroyed - processed {_packetCount} total packets ({_worldInitPacketsReceived} WorldInit, {_mapRegionPacketsReceived} MapRegion)");
         }
 

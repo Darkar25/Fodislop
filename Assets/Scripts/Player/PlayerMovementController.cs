@@ -97,9 +97,11 @@ namespace Fodinae.Assets.Scripts.Player
 
         public void UpdateServerPosition(Vector2Int position)
         {
+            Vector2Int oldPos = ClientPosition;
             ServerPosition = position;
             // Reconcile ClientPosition with ServerPosition (converted to Unity grid coordinates)
             ClientPosition = new Vector2Int(position.x, MapManager.Instance.WorldHeight - 1 - position.y);
+            OnPlayerMoved?.Invoke(oldPos, ClientPosition);
         }
 
         private void ReadInput()

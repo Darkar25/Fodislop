@@ -54,7 +54,20 @@ namespace Fodinae.Assets.Scripts.Game.Managers
             DontDestroyOnLoad(gameObject);
         }
 
-    public void LoadWorldInit(WorldInitPacket packet)
+        void OnDestroy()
+        {
+            if (_instance == this)
+            {
+                MapStorage.Instance?.Dispose();
+            }
+        }
+
+        void OnApplicationQuit()
+        {
+            MapStorage.Instance?.Dispose();
+        }
+
+        public void LoadWorldInit(WorldInitPacket packet)
     {
         Debug.Log($"[MapManager] LoadWorldInit called: {packet.DisplayName} ({packet.CodeName}) [{packet.Width}x{packet.Height}]");
         
