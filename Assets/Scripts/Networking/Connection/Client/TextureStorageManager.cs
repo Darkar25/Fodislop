@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Cysharp.Threading.Tasks;
 using UnityEngine;
@@ -129,6 +131,33 @@ namespace Fodinae.Assets.Scripts.Networking.Connection.Client
 
                 var fullPath = Path.Combine(_textureFolderPath, filename);
                 
+                // Fuzzy search for the file if it doesn't have an extension or file not found
+                if (!File.Exists(fullPath))
+                {
+                    string directory = Path.GetDirectoryName(fullPath);
+                    string filenameWithoutExtension = Path.GetFileNameWithoutExtension(fullPath);
+
+                    if (Directory.Exists(directory))
+                    {
+                        var files = Directory.GetFiles(directory, filenameWithoutExtension + ".*")
+                            .Where(f => !f.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                            .OrderBy(f => {
+                                string ext = Path.GetExtension(f).ToLower();
+                                if (ext == ".webp") return 0;
+                                if (ext == ".gif") return 1;
+                                if (ext == ".png") return 2;
+                                return 3;
+                            }).ToArray();
+
+                        if (files.Length > 0)
+                        {
+                            fullPath = files[0];
+                            if (_enableDebugLogging)
+                                Debug.Log($"[TextureStorageManager] Fuzzy matched {filename} to {fullPath}");
+                        }
+                    }
+                }
+
                 if (!File.Exists(fullPath))
                 {
                     if (_enableDebugLogging)
