@@ -29,7 +29,7 @@ namespace Fodinae.Assets.Scripts.World
         public static DecodedAnimation DecodeGif(byte[] data)
         {
             try { return new GifInternalDecoder(data).Decode(); }
-            catch (Exception e) { Debug.LogError($"[AnimationContainerDecoder] GIF decode failed: {e.Message}"); return default; }
+            catch (Exception e) { Debug.LogError($"[AnimationContainerDecoder] GIF decode failed: {e.Message}\n{e.StackTrace}"); return default; }
         }
 
         public static DecodedAnimation DecodeWebP(byte[] data)
@@ -39,40 +39,73 @@ namespace Fodinae.Assets.Scripts.World
                 int pos = 12;
                 var frameTextures = new List<Texture2D>();
                 var delays = new List<int>();
-                while (pos < data.Length - 8) {
+                int width = 0, height = 0;
+
+                while (pos <= data.Length - 8) {
                     string chunkId = System.Text.Encoding.ASCII.GetString(data, pos, 4);
                     uint chunkSize = BitConverter.ToUInt32(data, pos + 4);
                     pos += 8;
-                    if (chunkId == "ANMF" && chunkSize > 16) {
+
+                    if (chunkId == "VP8X") {
+                        width = (data[pos + 4] | (data[pos + 5] << 8) | (data[pos + 6] << 16)) + 1;
+                        height = (data[pos + 7] | (data[pos + 8] << 8) | (data[pos + 9] << 16)) + 1;
+                    } else if (chunkId == "ANMF") {
+                        // ANMF structure:
+                        // frame_x (3), frame_y (3), frame_width (3), frame_height (3), duration (3), reserved/flags (1)
+                        // All these are 24-bit ints (3 bytes)
                         int duration = data[pos + 12] | (data[pos + 13] << 8) | (data[pos + 14] << 16);
-                        int payloadPos = pos + 16;
                         int payloadSize = (int)chunkSize - 16;
+                        int payloadPos = pos + 16;
+
+                        // Create a valid WebP file for this single frame
+                        // RIFF(4) size(4) WEBP(4) VP8/VP8L/LOSSLESS(4) size(4) data(...)
                         byte[] frameFile = new byte[payloadSize + 12];
-                        Buffer.BlockCopy(data, 0, frameFile, 0, 4);
-                        byte[] sizeBytes = BitConverter.GetBytes((uint)payloadSize + 4);
-                        Buffer.BlockCopy(sizeBytes, 0, frameFile, 4, 4);
-                        Buffer.BlockCopy(data, 8, frameFile, 8, 4);
+                        Buffer.BlockCopy(data, 0, frameFile, 0, 4); // RIFF
+                        byte[] newSize = BitConverter.GetBytes((uint)payloadSize + 4);
+                        Buffer.BlockCopy(newSize, 0, frameFile, 4, 4);
+                        Buffer.BlockCopy(data, 8, frameFile, 8, 4); // WEBP
+                        // Actually we need to copy the actual image chunk (VP8/VP8L) from the ANMF payload
                         Buffer.BlockCopy(data, payloadPos, frameFile, 12, payloadSize);
+
                         Texture2D tex = new Texture2D(2, 2);
-                        if (tex.LoadImage(frameFile)) { frameTextures.Add(tex); delays.Add(duration); }
-                        else UnityEngine.Object.Destroy(tex);
+                        if (tex.LoadImage(frameFile)) {
+                            frameTextures.Add(tex);
+                            delays.Add(duration);
+                        } else {
+                            UnityEngine.Object.Destroy(tex);
+                        }
                     }
                     pos += (int)((chunkSize + 1) & ~1);
                 }
+
                 if (frameTextures.Count == 0) {
                     Texture2D tex = new Texture2D(2, 2);
                     if (tex.LoadImage(data)) return new DecodedAnimation { Atlas = tex, FrameCount = 1, FPS = 0 };
-                    UnityEngine.Object.Destroy(tex); return default;
+                    UnityEngine.Object.Destroy(tex);
+                    return default;
                 }
-                int width = frameTextures[0].width, height = frameTextures[0].height;
+
+                width = frameTextures[0].width;
+                height = frameTextures[0].height;
                 var atlas = new Texture2D(width, height * frameTextures.Count, TextureFormat.RGBA32, false);
+                atlas.filterMode = FilterMode.Point;
                 float totalDelay = 0;
                 for (int i = 0; i < frameTextures.Count; i++) {
+                    // Stack vertically, Frame 0 at top (Unity y = max)
                     Graphics.CopyTexture(frameTextures[i], 0, 0, 0, 0, width, height, atlas, 0, 0, 0, (frameTextures.Count - 1 - i) * height);
-                    totalDelay += delays[i]; UnityEngine.Object.Destroy(frameTextures[i]);
+                    totalDelay += delays[i];
+                    UnityEngine.Object.Destroy(frameTextures[i]);
                 }
-                return new DecodedAnimation { Atlas = atlas, FrameCount = frameTextures.Count, FPS = totalDelay > 0 ? 1000f / (totalDelay / frameTextures.Count) : 10f };
-            } catch (Exception e) { Debug.LogError($"[AnimationContainerDecoder] WebP decode failed: {e.Message}"); return default; }
+                float avgDelay = (float)totalDelay / frameTextures.Count;
+                return new DecodedAnimation {
+                    Atlas = atlas,
+                    FrameCount = frameTextures.Count,
+                    FPS = avgDelay > 0 ? 1000f / avgDelay : 10f
+                };
+            } catch (Exception e) {
+                Debug.LogError($"[AnimationContainerDecoder] WebP decode failed: {e.Message}");
+                return default;
+            }
         }
 
         private class GifInternalDecoder
@@ -116,13 +149,13 @@ namespace Fodinae.Assets.Scripts.World
                     else break;
                 }
                 if (fts.Count == 0) return default;
-                var atlas = new Texture2D(_sw, _sh * fts.Count, TextureFormat.RGBA32, false); float total = 0;
+                var atlas = new Texture2D(_sw, _sh * fts.Count, TextureFormat.RGBA32, false); atlas.filterMode = FilterMode.Point; float total = 0;
                 for (int i = 0; i < fts.Count; i++) { Graphics.CopyTexture(fts[i], 0, 0, 0, 0, _sw, _sh, atlas, 0, 0, 0, (_sh * (fts.Count - 1 - i))); total += dls[i]; UnityEngine.Object.Destroy(fts[i]); }
-                return new DecodedAnimation { Atlas = atlas, FrameCount = fts.Count, FPS = total > 0 ? 100f / (total / fts.Count) : 10f };
+                return new DecodedAnimation { Atlas = atlas, FrameCount = fts.Count, FPS = total > 0 ? 1000f / (total / fts.Count) : 10f };
             }
             private Color32[] ReadCT(int s) { var t = new Color32[s]; for (int i = 0; i < s; i++) t[i] = new Color32(_data[_pos++], _data[_pos++], _data[_pos++], 255); return t; }
-            private void Skip() { int s; while ((s = _data[_pos++]) > 0) _pos += s; }
-            private byte[] ReadDB() { using (var ms = new MemoryStream()) { int s; while ((s = _data[_pos++]) > 0) { ms.Write(_data, _pos, s); _pos += s; } return ms.ToArray(); } }
+            private void Skip() { int s; while (_pos < _data.Length && (s = _data[_pos++]) > 0) _pos += s; }
+            private byte[] ReadDB() { using (var ms = new MemoryStream()) { int s; while (_pos < _data.Length && (s = _data[_pos++]) > 0) { ms.Write(_data, _pos, s); _pos += s; } return ms.ToArray(); } }
             private byte[] Lzw(byte[] d, int m, int pc) {
                 int cc = 1 << m, eoi = cc + 1, nc = cc + 2, cs = m + 1, cm = (1 << cs) - 1;
                 int[] pref = new int[4096]; byte[] suff = new byte[4096], ps = new byte[4097];
@@ -130,11 +163,12 @@ namespace Fodinae.Assets.Scripts.World
                 byte[] o = new byte[pc]; int op = 0, bb = 0, bc = 0, dp = 0, t = 0, oc = -1;
                 while (op < pc) {
                     while (bc < cs && dp < d.Length) { bb |= d[dp++] << bc; bc += 8; }
+                    if (bc < cs) break;
                     int c = bb & cm; bb >>= cs; bc -= cs;
                     if (c == cc) { cs = m + 1; cm = (1 << cs) - 1; nc = cc + 2; oc = -1; continue; }
                     if (c == eoi) break;
                     if (oc == -1) { o[op++] = suff[c]; oc = c; continue; }
-                    int cur = c; if (c >= nc) { ps[t++] = suff[oc]; cur = oc; }
+                    int cur = c; if (c >= nc) { ps[t++] = (byte)LzwFirst(oc, cc, pref, suff); cur = oc; }
                     while (cur >= cc) { ps[t++] = suff[cur]; cur = pref[cur]; }
                     ps[t++] = suff[cur]; byte f = ps[t - 1]; while (t > 0) o[op++] = ps[--t];
                     if (nc < 4096) { pref[nc] = oc; suff[nc] = f; nc++; if (nc == (1 << cs) && cs < 12) { cs++; cm = (1 << cs) - 1; } }
@@ -142,47 +176,7 @@ namespace Fodinae.Assets.Scripts.World
                 }
                 return o;
             }
-        }
-
-        public static bool GetGifMetadata(byte[] data, out int width, out int height, out int frameCount, out float fps)
-        {
-            width = 0; height = 0; frameCount = 0; fps = 0;
-            if (DetectType(data) != ContainerType.GIF) return false;
-            try {
-                width = data[6] | (data[7] << 8);
-                height = data[8] | (data[9] << 8);
-                int pos = 13;
-                if ((data[10] & 0x80) != 0) pos += 3 * (1 << ((data[10] & 0x07) + 1));
-                var delays = new List<int>();
-                while (pos < data.Length - 1) {
-                    byte b = data[pos++];
-                    if (b == 0x21) {
-                        byte type = data[pos++];
-                        if (type == 0xF9) {
-                            frameCount++;
-                            pos++; // skip size
-                            pos++; // skip packed
-                            int delay = data[pos++] | (data[pos++] << 8);
-                            if (delay > 0) delays.Add(delay);
-                            pos++; // skip index
-                            pos++; // skip terminator
-                        } else {
-                            int size; while ((size = data[pos++]) > 0) pos += size;
-                        }
-                    } else if (b == 0x2C) {
-                        pos += 8;
-                        if ((data[pos++] & 0x80) != 0) pos += 3 * (1 << ((data[pos-1] & 0x07) + 1));
-                        pos++;
-                        int size; while ((size = data[pos++]) > 0) pos += size;
-                    } else if (b == 0x3B) break;
-                    else break;
-                }
-                if (delays.Count > 0) {
-                    float total = 0; foreach (var d in delays) total += d;
-                    fps = 100f / (total / delays.Count);
-                } else fps = 10f;
-                return true;
-            } catch { return false; }
+            private int LzwFirst(int c, int cc, int[] pref, byte[] suff) { while (c >= cc) c = pref[c]; return suff[c]; }
         }
     }
 }
