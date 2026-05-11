@@ -129,6 +129,22 @@ namespace Fodinae.Assets.Scripts.Networking.Connection.Client
 
                 var fullPath = Path.Combine(_textureFolderPath, filename);
                 
+                // Fuzzy search for the file if it doesn't have an extension
+                if (!Path.HasExtension(fullPath) || !File.Exists(fullPath))
+                {
+                    string directory = Path.GetDirectoryName(fullPath);
+                    string filenameWithoutExtension = Path.GetFileNameWithoutExtension(fullPath);
+
+                    if (Directory.Exists(directory))
+                    {
+                        var files = Directory.GetFiles(directory, filenameWithoutExtension + ".*");
+                        if (files.Length > 0)
+                        {
+                            fullPath = files[0];
+                        }
+                    }
+                }
+
                 if (!File.Exists(fullPath))
                 {
                     if (_enableDebugLogging)
