@@ -313,30 +313,35 @@ namespace Fodinae.Assets.Scripts.World
             int frameHeight = MapManager.Instance.GetAnimationFrameHeight(cellType);
             float containerFPS = 0;
 
-            // Try to extract FPS from the container if it was encoded in the name by ClientAssetLoader
-            if (texture.name.Contains("|FPS="))
+            // Try to extract FPS and FrameHeight from the container if it was encoded in the name
+            if (texture.name.Contains("|"))
             {
-                string fpsStr = texture.name.Split(new[] { "|FPS=" }, StringSplitOptions.None)[1];
-                if (float.TryParse(fpsStr, out containerFPS))
+                string[] parts = texture.name.Split('|');
+                foreach (string part in parts)
                 {
-                    // If we have a container with multiple frames, we assume they are stacked vertically
-                    // and each frame is _cellTextureSize high.
-                    if (texture.height > _cellTextureSize)
+                    if (part.StartsWith("FPS="))
                     {
-                        frameHeight = _cellTextureSize;
+                        float.TryParse(part.Substring(4), out containerFPS);
+                    }
+                    else if (part.StartsWith("FrameHeight="))
+                    {
+                        int.TryParse(part.Substring(12), out frameHeight);
                     }
                 }
             }
+
+            // If still 0, we assume the whole texture is one frame
+            int effectiveFrameHeight = frameHeight > 0 ? frameHeight : texture.height;
 
             var textureInfo = new CellTextureInfo
             {
                 CellType = cellType,
                 BaseTexture = texture,
-                HasVariations = texture.width >= _cellTextureSize,
+                HasVariations = texture.width > _cellTextureSize || effectiveFrameHeight > _cellTextureSize,
                 VariationCount = 1,
                 AnimationFrames = frameHeight > 0 ? texture.height / frameHeight : 1,
                 FramesPerRow = 1,
-                FrameSize = _cellTextureSize,
+                FrameSize = effectiveFrameHeight,
                 ContainerFPS = containerFPS
             };
 

@@ -312,7 +312,7 @@ namespace Fodinae.Assets.Scripts
 
                 if (decoded.Atlas != null)
                 {
-                    decoded.Atlas.name = $"RuntimeAnim_{DateTime.Now.Ticks}|FPS={decoded.FPS}";
+                    decoded.Atlas.name = $"RuntimeAnim_{DateTime.Now.Ticks}|FPS={decoded.FPS}|FrameHeight={decoded.FrameHeight}";
                     decoded.Atlas.filterMode = FilterMode.Point;
                     return decoded.Atlas;
                 }

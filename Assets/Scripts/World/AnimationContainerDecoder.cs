@@ -26,6 +26,7 @@ namespace Fodinae.Assets.Scripts.World
         {
             public Texture2D Atlas;
             public int FrameCount;
+            public int FrameHeight;
             public float FPS;
         }
 
@@ -82,6 +83,7 @@ namespace Fodinae.Assets.Scripts.World
                     {
                         Atlas = atlas,
                         FrameCount = frameCount,
+                        FrameHeight = height,
                         FPS = Mathf.Clamp(fps, 0.1f, 60f)
                     };
                 }
@@ -122,7 +124,7 @@ namespace Fodinae.Assets.Scripts.World
                         Texture2D tex = Texture2DExt.CreateTexture2DFromWebP(data, false, false, out err);
                         if (err == Error.Success && tex != null)
                         {
-                            return new DecodedAnimation { Atlas = tex, FrameCount = 1, FPS = 0 };
+                            return new DecodedAnimation { Atlas = tex, FrameCount = 1, FrameHeight = tex.height, FPS = 0 };
                         }
                         return default;
                     }
@@ -192,6 +194,7 @@ namespace Fodinae.Assets.Scripts.World
                     {
                         Atlas = atlas,
                         FrameCount = frameIndex,
+                        FrameHeight = height,
                         FPS = Mathf.Clamp(fps, 0.1f, 60f)
                     };
                 }
