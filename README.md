@@ -1,6 +1,6 @@
 # Fodinae
 
-2D-клиент для [Fodinae](https://github.com/MinesReborn) — реворк клиента MMORPG Сергея Мячина. Проект сфокусирован на производительном тайловом рендеринге и современной сетевой архитектуре.
+2D-клиент для [Fodinae](https://github.com/MinesReborn) — реворк клиента давно почившей MMORPG Сергея Мячина. Проект сфокусирован на производительном тайловом рендеринге и современной сетевой архитектуре.
 
 ## Требования
 
@@ -37,10 +37,16 @@ git clone https://github.com/MinesReborn/Fodislop.git
 
 ## Зависимости
 
-- **Core**: `darkar25.fodinae.*` (data, networking) — сетевой стек.
-- **Compression**: SharpCompress, ZstdSharp, LZ4.
-- **Async**: UniTask.
-- **Other**: NetCoreServer, WebP decoder.
+### Unity-пакеты (Git)
+
+- [`darkar25.fodinae.data`](https://github.com/MinesReborn/MinesServerNetworking.git?path=/MinesServer.Data/) — типы данных
+- [`darkar25.fodinae.networking`](https://github.com/MinesReborn/MinesServerNetworking.git?path=/MinesServer.Networking/) — сетевой протокол
+- [`com.netpyoung.webp`](https://github.com/netpyoung/unity.webp.git?path=unity_project/Assets/unity.webp) — декодирование WebP
+
+### Vendored плагины (`Assets/Plugins/`)
+
+- SharpCompress, ZstdSharp, K4os.Compression.LZ4, NetCoreServer, Genumerics
+- [UniTask](https://github.com/Cysharp/UniTask) (полный пакет)
 
 ## Contributing
 
