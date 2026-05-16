@@ -133,6 +133,7 @@ namespace Fodinae.Assets.Scripts.World
         }
 
         public event Action<string, Texture2D> OnTextureLoaded;
+        public event Action<CellType> OnCellTextureLoaded;
 
         public bool HasAnimations(CellType cellType)
         {
@@ -183,6 +184,15 @@ namespace Fodinae.Assets.Scripts.World
                 }
             }
             return Vector4.zero;
+        }
+
+        public void RequestTexture(CellType cellType)
+        {
+            if (cellType == CellType.Unloaded) return;
+            if (_textureCache.TryGetTexture(cellType, out _)) return;
+            if (_pendingRequests.ContainsKey(cellType)) return;
+
+            LoadTexture(cellType).Forget();
         }
 
         public async UniTask PreloadTexturesAsync(IEnumerable<CellType> types)
@@ -331,6 +341,7 @@ namespace Fodinae.Assets.Scripts.World
 
             await _currentAtlas.UpdateAtlasTexture();
             OnTextureLoaded?.Invoke($"cells/{(int)cellType}.png", texture);
+            OnCellTextureLoaded?.Invoke(cellType);
         }
 
         private CellVariation CalculateVariation(CellTextureInfo textureInfo, int globalX, int globalY)

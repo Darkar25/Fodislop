@@ -28,6 +28,8 @@ namespace Fodinae.Assets.Scripts.World
         private Texture2D _worldMapTex;
         private Texture2D _cellConfigTex;
         private Texture2DArray _atlasesTexArray;
+        private HashSet<CellType> _dirtyCellConfigs = new();
+        private bool _atlasesDirty = false;
 
         private int _currentVpWidth = -1;
         private int _currentVpHeight = -1;
@@ -88,6 +90,11 @@ namespace Fodinae.Assets.Scripts.World
                 MapManager.Instance.OnWorldDataLoaded += OnWorldDataLoaded;
             }
 
+            if (WorldTextureManager.Instance != null)
+            {
+                WorldTextureManager.Instance.OnCellTextureLoaded += OnCellTextureLoaded;
+            }
+
             _mainCamera = Camera.main;
             if (_mainCamera == null) _mainCamera = FindObjectsOfType<Camera>().FirstOrDefault();
         }
@@ -109,6 +116,12 @@ namespace Fodinae.Assets.Scripts.World
                     _material.SetVector("_FlowMapRect", new Vector4(r.x, r.y, r.width, r.height));
                 }
             }
+        }
+
+        private void OnCellTextureLoaded(CellType cellType)
+        {
+            _dirtyCellConfigs.Add(cellType);
+            _atlasesDirty = true;
         }
 
         private void Update()
@@ -146,10 +159,56 @@ namespace Fodinae.Assets.Scripts.World
             if (snapPos != _lastSnapPos)
             {
                 _lastSnapPos = snapPos;
-                _material.SetVector("_WorldParams", new Vector4(snapPos.x, snapPos.y, MapManager.Instance.WorldWidth, MapManager.Instance.WorldHeight));
+                if (_material != null)
+                {
+                    _material.SetVector("_WorldParams", new Vector4(snapPos.x, snapPos.y, MapManager.Instance.WorldWidth, MapManager.Instance.WorldHeight));
+                }
+                RequestVisibleTextures(snapPos);
             }
 
-            _material.SetVector("_WorldOffset", new Vector4(camPos.x - snapPos.x, camPos.y - snapPos.y, 0, 0));
+            if (_material != null)
+            {
+                _material.SetVector("_WorldOffset", new Vector4(camPos.x - snapPos.x, camPos.y - snapPos.y, 0, 0));
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (_dirtyCellConfigs.Count > 0)
+            {
+                UpdateCellConfigTexture();
+                _dirtyCellConfigs.Clear();
+            }
+            if (_atlasesDirty)
+            {
+                UpdateAtlasesTextureArray();
+                _atlasesDirty = false;
+            }
+        }
+
+        private void RequestVisibleTextures(Vector2Int snapPos)
+        {
+            if (!MapStorage.Instance.IsReady || _worldMapTex == null) return;
+
+            int halfW = _currentVpWidth / 2;
+            int halfH = _currentVpHeight / 2;
+
+            int worldW = MapManager.Instance.WorldWidth;
+            int worldH = MapManager.Instance.WorldHeight;
+
+            for (int y = snapPos.y - halfH; y <= snapPos.y + halfH; y++)
+            {
+                for (int x = snapPos.x - halfW; x <= snapPos.x + halfW; x++)
+                {
+                    int worldX = (x % worldW + worldW) % worldW;
+                    int worldY = (y % worldH + worldH) % worldH;
+
+                    // Sample IDs from our cached world map texture
+                    Color32 data = _worldMapTex.GetPixel(worldX, worldY);
+                    WorldTextureManager.Instance.RequestTexture((CellType)data.r); // Foreground
+                    WorldTextureManager.Instance.RequestTexture((CellType)data.a); // Background
+                }
+            }
         }
 
         private void BuildViewportMesh(int width, int height)

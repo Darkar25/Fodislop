@@ -98,10 +98,14 @@ half4 SampleCell(float2 wPos, int cellId, float2 quadUV, float2 localUV, float t
     float animFrames = meta.z;
     int atlasIdx = (int)(meta.w + 0.5);
 
-    if (atlasIdx < 0) return half4(1, 0, 1, 1);
+    if (atlasIdx < 0) return half4(0, 0, 0, 0);
 
     const float tileSizeUV = 32.0 / 4096.0;
     float2 subAtlasSizeUV = rect.zw;
+
+    // If not loaded, subAtlasSizeUV will be 0. Return transparent.
+    if (subAtlasSizeUV.x < 0.0001) return half4(0, 0, 0, 0);
+
     float2 tilesCount = ceil(subAtlasSizeUV / tileSizeUV - 0.0001);
     tilesCount = max(tilesCount, 1.0);
 
