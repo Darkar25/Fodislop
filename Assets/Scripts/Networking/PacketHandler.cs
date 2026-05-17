@@ -213,7 +213,6 @@ namespace Fodinae.Assets.Scripts.Networking
 
             try
             {
-                var layer = MapStorage.Instance.cellLayer;
                 int index = 0;
                 for (int y = 0; y <= mapRegionPacket.Height; y++)
                 {
@@ -221,7 +220,7 @@ namespace Fodinae.Assets.Scripts.Networking
                     {
                         if (index < mapRegionPacket.Payload.Length)
                         {
-                            layer[mapRegionPacket.X + x, mapRegionPacket.Y + y] = mapRegionPacket.Payload[index++];
+                            MapStorage.Instance.SetCell(mapRegionPacket.X + x, mapRegionPacket.Y + y, mapRegionPacket.Payload[index++]);
                         }
                     }
                 }

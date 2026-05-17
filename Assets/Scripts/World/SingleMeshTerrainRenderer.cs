@@ -67,6 +67,13 @@ namespace Fodinae.Assets.Scripts.World
         private int _cacheMinX, _cacheMinY;
         private int _cacheWidth, _cacheHeight;
 
+        // Pre-calculation buffers
+        private Vector3[,] _gridVertexOffsets;
+        private float[,] _gridShadowValues;
+        private int[,] _cellTilingDescriptors;
+        private byte[,] _cellReliefMasks;
+        private bool[,] _cellIsRelief;
+
         private struct CellMetadata {
             public CellConfigProperties Properties;
             public byte ReliefGroup;
@@ -90,6 +97,8 @@ namespace Fodinae.Assets.Scripts.World
             new(-0.70710678f, -0.70710678f), new(0.70710678f, -0.70710678f),
             new(0.70710678f, 0.70710678f), new(-0.70710678f, 0.70710678f)
         };
+
+        private bool _needsRefresh = false;
 
         private void OnValidate()
         {
@@ -121,12 +130,16 @@ namespace Fodinae.Assets.Scripts.World
 
             if (WorldTextureManager.Instance != null)
                 WorldTextureManager.Instance.OnTextureLoaded += OnTextureLoaded;
+            if (MapManager.Instance != null)
+                MapManager.Instance.OnWorldDataLoaded += OnWorldDataLoaded;
         }
 
         private void OnDestroy()
         {
             if (WorldTextureManager.Instance != null)
                 WorldTextureManager.Instance.OnTextureLoaded -= OnTextureLoaded;
+            if (MapManager.Instance != null)
+                MapManager.Instance.OnWorldDataLoaded -= OnWorldDataLoaded;
 
             if (_mesh != null)
             {
@@ -139,7 +152,12 @@ namespace Fodinae.Assets.Scripts.World
         private void OnTextureLoaded(string filename, Texture2D texture)
         {
             _metadataCache.Clear();
-            _lastGridPos = new Vector2Int(int.MinValue, int.MinValue);
+            _needsRefresh = true;
+        }
+
+        private void OnWorldDataLoaded()
+        {
+            _needsRefresh = true;
         }
 
         private void InitializeShader()
@@ -181,11 +199,12 @@ namespace Fodinae.Assets.Scripts.World
                 Mathf.FloorToInt(camPos.y / _cellSize) - _meshHeight / 2
             );
 
-            if (currentGridPos != _lastGridPos)
+            if (currentGridPos != _lastGridPos || _needsRefresh)
             {
                 UpdateVertexAttributes(currentGridPos.x, currentGridPos.y);
                 transform.position = new Vector3(currentGridPos.x * _cellSize, currentGridPos.y * _cellSize, 0);
                 _lastGridPos = currentGridPos;
+                _needsRefresh = false;
             }
         }
 
@@ -207,6 +226,20 @@ namespace Fodinae.Assets.Scripts.World
             _cacheWidth = _meshWidth + 2; _cacheHeight = _meshHeight + 2;
             if (_cellCache == null || _cellCache.GetLength(0) != _cacheWidth || _cellCache.GetLength(1) != _cacheHeight)
                 _cellCache = new CachedCellData[_cacheWidth, _cacheHeight];
+
+            int gw = _meshWidth + 1, gh = _meshHeight + 1;
+            if (_gridVertexOffsets == null || _gridVertexOffsets.GetLength(0) != gw || _gridVertexOffsets.GetLength(1) != gh)
+            {
+                _gridVertexOffsets = new Vector3[gw, gh];
+                _gridShadowValues = new float[gw, gh];
+            }
+
+            if (_cellTilingDescriptors == null || _cellTilingDescriptors.GetLength(0) != _meshWidth || _cellTilingDescriptors.GetLength(1) != _meshHeight)
+            {
+                _cellTilingDescriptors = new int[_meshWidth, _meshHeight];
+                _cellReliefMasks = new byte[_meshWidth, _meshHeight];
+                _cellIsRelief = new bool[_meshWidth, _meshHeight];
+            }
         }
 
         private CellMetadata GetMetadata(CellType type, List<TextureAtlas> atlases)
@@ -252,33 +285,81 @@ namespace Fodinae.Assets.Scripts.World
             }
         }
 
+        private void PrecalculateData()
+        {
+            int gw = _meshWidth + 1, gh = _meshHeight + 1;
+            for (int y = 0; y < gh; y++) {
+                for (int x = 0; x < gw; x++) {
+                    int cx = x + 1, cy = y + 1;
+                    var tl = _cellCache[cx-1, cy], tr = _cellCache[cx, cy], bl = _cellCache[cx-1, cy-1], br = _cellCache[cx, cy-1];
+                    if (tl.Distortion == CellDistortionType.Block || tr.Distortion == CellDistortionType.Block || bl.Distortion == CellDistortionType.Block || br.Distortion == CellDistortionType.Block) _gridVertexOffsets[x, y] = Vector3.zero;
+                    else {
+                        int xSign = 0, ySign = 0;
+                        if (bl.Distortion == CellDistortionType.Cause) { xSign -= 1; ySign += 1; }
+                        if (br.Distortion == CellDistortionType.Cause) { xSign += 1; ySign += 1; }
+                        if (tl.Distortion == CellDistortionType.Cause) { xSign -= 1; ySign -= 1; }
+                        if (tr.Distortion == CellDistortionType.Cause) { xSign += 1; ySign -= 1; }
+                        if (xSign == 0 && ySign == 0) _gridVertexOffsets[x, y] = Vector3.zero;
+                        else {
+                            uint seed = (uint)((_cacheMinX + cx) * 374761397 + (_cacheMinY + cy) * 668265263);
+                            seed = (seed ^ (seed >> 13)) * 1274126177; seed = seed ^ (seed >> 16);
+                            float r = ((seed % 4) + 1) * 0.0625f;
+                            uint seed2 = seed * 2654435761u; float ry = ((seed2 % 4) + 1) * 0.0625f;
+                            _gridVertexOffsets[x, y] = new Vector3(xSign > 0 ? r : (xSign < 0 ? -r : 0), ySign > 0 ? ry : (ySign < 0 ? -ry : 0), 0);
+                        }
+                    }
+                    bool hasC = (bl.Properties & CellConfigProperties.DropsShadow) != 0 || (br.Properties & CellConfigProperties.DropsShadow) != 0 || (tl.Properties & CellConfigProperties.DropsShadow) != 0 || (tr.Properties & CellConfigProperties.DropsShadow) != 0;
+                    bool hasR = (bl.Properties & CellConfigProperties.ReceivesShadow) != 0 || (br.Properties & CellConfigProperties.ReceivesShadow) != 0 || (tl.Properties & CellConfigProperties.ReceivesShadow) != 0 || (tr.Properties & CellConfigProperties.ReceivesShadow) != 0;
+                    _gridShadowValues[x, y] = (hasC && hasR) ? 0.7f : 0.0f;
+                }
+            }
+            for (int y = 0; y < _meshHeight; y++) {
+                for (int x = 0; x < _meshWidth; x++) {
+                    int cx = x + 1, cy = y + 1; var data = _cellCache[cx, cy];
+                    if (data.HasTileGroup) {
+                        byte m = 0;
+                        if (_cellCache[cx-1,cy].HasTileGroup && _cellCache[cx-1,cy].TileGroupId == data.TileGroupId) m |= 1;
+                        if (_cellCache[cx-1,cy+1].HasTileGroup && _cellCache[cx-1,cy+1].TileGroupId == data.TileGroupId) m |= 2;
+                        if (_cellCache[cx,cy+1].HasTileGroup && _cellCache[cx,cy+1].TileGroupId == data.TileGroupId) m |= 4;
+                        if (_cellCache[cx+1,cy+1].HasTileGroup && _cellCache[cx+1,cy+1].TileGroupId == data.TileGroupId) m |= 8;
+                        if (_cellCache[cx+1,cy].HasTileGroup && _cellCache[cx+1,cy].TileGroupId == data.TileGroupId) m |= 16;
+                        if (_cellCache[cx+1,cy-1].HasTileGroup && _cellCache[cx+1,cy-1].TileGroupId == data.TileGroupId) m |= 32;
+                        if (_cellCache[cx,cy-1].HasTileGroup && _cellCache[cx,cy-1].TileGroupId == data.TileGroupId) m |= 64;
+                        if (_cellCache[cx-1,cy-1].HasTileGroup && _cellCache[cx-1,cy-1].TileGroupId == data.TileGroupId) m |= 128;
+                        _cellTilingDescriptors[x, y] = TileBitmaskConverter.GetDescriptor(m);
+                    } else _cellTilingDescriptors[x, y] = 0;
+                    byte rm = 0; bool isR = false;
+                    if (_cellCache[cx,cy+1].ReliefGroup >= data.ReliefGroup) rm |= 1; else isR = true;
+                    if (_cellCache[cx-1,cy].ReliefGroup >= data.ReliefGroup) rm |= 2; else isR = true;
+                    if (_cellCache[cx,cy-1].ReliefGroup >= data.ReliefGroup) rm |= 4; else isR = true;
+                    if (_cellCache[cx+1,cy].ReliefGroup >= data.ReliefGroup) rm |= 8; else isR = true;
+                    _cellReliefMasks[x, y] = rm; _cellIsRelief[x, y] = isR;
+                }
+            }
+        }
+
         private void UpdateVertexAttributes(int minX, int minY)
         {
             var atlases = WorldTextureManager.Instance.GetAllAtlases();
             if (atlases.Count == 0) return;
 
             bool materialsChanged = false;
-            if (_subMeshIndices.Length != atlases.Count)
-            {
-                CleanupMaterials();
-                _subMeshIndices = new List<int>[atlases.Count];
-                _materials = new Material[atlases.Count];
-                for (int i = 0; i < atlases.Count; i++) {
-                    _subMeshIndices[i] = new(); _materials[i] = new Material(_terrainShader);
-                }
+            if (_subMeshIndices.Length != atlases.Count) {
+                CleanupMaterials(); _subMeshIndices = new List<int>[atlases.Count]; _materials = new Material[atlases.Count];
+                for (int i = 0; i < atlases.Count; i++) { _subMeshIndices[i] = new(); _materials[i] = new Material(_terrainShader); }
                 materialsChanged = true;
             }
-
             foreach (var list in _subMeshIndices) list.Clear();
 
             PopulateCellCache(minX, minY);
+            PrecalculateData();
             ComputeBackgroundMap();
 
             int vIdx = 0;
             for (int y = 0; y < _meshHeight; y++) {
                 for (int x = 0; x < _meshWidth; x++) {
-                    FillQuadData(x + 1, y + 1, minX + x, minY + y, true, ref vIdx, atlases);
-                    FillQuadData(x + 1, y + 1, minX + x, minY + y, false, ref vIdx, atlases);
+                    FillQuadData(x, y, minX + x, minY + y, true, ref vIdx, atlases);
+                    FillQuadData(x, y, minX + x, minY + y, false, ref vIdx, atlases);
                 }
             }
 
@@ -287,49 +368,46 @@ namespace Fodinae.Assets.Scripts.World
             _mesh.SetUVs(4, _animationData); _mesh.SetUVs(5, _shadowReliefData); _mesh.SetUVs(6, _localUVs);
 
             _mesh.subMeshCount = atlases.Count;
-            for (int i = 0; i < atlases.Count; i++)
-            {
+            for (int i = 0; i < atlases.Count; i++) {
                 var atlasTex = atlases[i].Texture;
-                if (_materials[i].GetTexture("_BaseMap") != atlasTex)
-                {
-                    var flowMapCoord = WorldTextureManager.Instance.GetFlowMapCoordinate(atlases[i]);
-                    Rect r = flowMapCoord.UVRect;
+                if (_materials[i].GetTexture("_BaseMap") != atlasTex) {
+                    var flowMapCoord = WorldTextureManager.Instance.GetFlowMapCoordinate(atlases[i]); Rect r = flowMapCoord.UVRect;
                     _materials[i].SetVector("_FlowMapRect", new Vector4(r.x, r.y, r.width, r.height));
                     _materials[i].SetColor("_ShimmerColor", _shimmerHighlightColor);
                     _materials[i].SetTexture("_BaseMap", atlasTex);
                 }
-                _mesh.SetIndices(_subMeshIndices[i], MeshTopology.Triangles, i);
+                _mesh.SetIndices(_subMeshIndices[i], MeshTopology.Triangles, i, false, 0);
             }
 
             _mesh.UploadMeshData(false);
             if (materialsChanged) _meshRenderer.sharedMaterials = _materials;
         }
 
-        private void FillQuadData(int cx, int cy, int gridX, int unityY, bool isBackground, ref int vIdx, List<TextureAtlas> atlases)
+        private void FillQuadData(int x, int y, int gridX, int unityY, bool isBackground, ref int vIdx, List<TextureAtlas> atlases)
         {
+            int cx = x + 1, cy = y + 1;
             int serverY = (MapManager.Instance.WorldHeight - 1 - unityY) % MapManager.Instance.WorldHeight;
             if (serverY < 0) serverY += MapManager.Instance.WorldHeight;
 
-            CellType cellType = isBackground ? _bgMapBuffer[cx - 1, cy - 1] : _cellCache[cx, cy].Type;
+            CellType cellType = isBackground ? _bgMapBuffer[x, y] : _cellCache[cx, cy].Type;
             if (isBackground && (cellType == _cellCache[cx, cy].Type || cellType == 0)) cellType = CellType.Unloaded;
 
-            CachedCellData data = (cellType == _cellCache[cx, cy].Type) ? _cellCache[cx, cy] : GetNeighborCacheEntry(cellType, cx, cy, atlases);
+            ref CachedCellData data = ref (cellType == _cellCache[cx, cy].Type ? ref _cellCache[cx, cy] : ref GetNeighborCacheEntry(cellType, cx, cy, atlases));
             int atlasIndex = data.AtlasIndex;
 
             float zOffset = isBackground ? 0.1f : 0.0f;
-            float lx = (cx - 1) * _cellSize, ly = (cy - 1) * _cellSize;
+            float lx = x * _cellSize, ly = y * _cellSize;
 
-            _vertices[vIdx+0] = new Vector3(lx, ly, zOffset) + GetVertexOffsetCached(cx, cy);
-            _vertices[vIdx+1] = new Vector3(lx + _cellSize, ly, zOffset) + GetVertexOffsetCached(cx + 1, cy);
-            _vertices[vIdx+2] = new Vector3(lx + _cellSize, ly + _cellSize, zOffset) + GetVertexOffsetCached(cx + 1, cy + 1);
-            _vertices[vIdx+3] = new Vector3(lx, ly + _cellSize, zOffset) + GetVertexOffsetCached(cx, cy + 1);
+            _vertices[vIdx+0] = new Vector3(lx, ly, zOffset) + _gridVertexOffsets[x, y];
+            _vertices[vIdx+1] = new Vector3(lx + _cellSize, ly, zOffset) + _gridVertexOffsets[x + 1, y];
+            _vertices[vIdx+2] = new Vector3(lx + _cellSize, ly + _cellSize, zOffset) + _gridVertexOffsets[x + 1, y + 1];
+            _vertices[vIdx+3] = new Vector3(lx, ly + _cellSize, zOffset) + _gridVertexOffsets[x, y + 1];
 
             _uvs[vIdx+0] = new Vector2(0, 0); _uvs[vIdx+1] = new Vector2(1, 0); _uvs[vIdx+2] = new Vector2(1, 1); _uvs[vIdx+3] = new Vector2(0, 1);
 
-            int descriptor = 0; float isTiling = 0f;
-            if (data.HasTileGroup) {
-                descriptor = TileBitmaskConverter.GetDescriptor(GetNeighborMaskCached(cx, cy, data.TileGroupId));
-                isTiling = 1f;
+            int descriptor = (cellType == _cellCache[cx, cy].Type) ? _cellTilingDescriptors[x, y] : 0;
+            float isTiling = data.HasTileGroup ? 1f : 0f;
+            if (data.HasTileGroup && descriptor != 0) {
                 if ((descriptor & 0x40) != 0) { (_uvs[vIdx+0].x, _uvs[vIdx+1].x) = (_uvs[vIdx+1].x, _uvs[vIdx+0].x); (_uvs[vIdx+3].x, _uvs[vIdx+2].x) = (_uvs[vIdx+2].x, _uvs[vIdx+3].x); }
                 if ((descriptor & 0x20) != 0) { (_uvs[vIdx+0].y, _uvs[vIdx+3].y) = (_uvs[vIdx+3].y, _uvs[vIdx+0].y); (_uvs[vIdx+1].y, _uvs[vIdx+2].y) = (_uvs[vIdx+2].y, _uvs[vIdx+1].y); }
                 if ((descriptor & 0x80) != 0) { Vector2 t = _uvs[vIdx+0]; _uvs[vIdx+0] = _uvs[vIdx+1]; _uvs[vIdx+1] = _uvs[vIdx+2]; _uvs[vIdx+2] = _uvs[vIdx+3]; _uvs[vIdx+3] = t; }
@@ -348,17 +426,15 @@ namespace Fodinae.Assets.Scripts.World
             Vector4 tileSizeVec = new Vector4(data.UVTileSize, data.UVTileSize, 0, 0);
             Vector4 worldPosVec = new Vector4(gridX, serverY, descriptor & 0x1F, isTiling);
 
-            float s0 = GetShadowValueCached(cx, cy), s1 = GetShadowValueCached(cx + 1, cy);
-            float s2 = GetShadowValueCached(cx + 1, cy + 1), s3 = GetShadowValueCached(cx, cy + 1);
-
-            bool isRelief; byte reliefMask = GetReliefMaskCached(cx, cy, data.ReliefGroup, out isRelief);
+            bool isRelief = (cellType == _cellCache[cx, cy].Type) && _cellIsRelief[x, y];
+            byte reliefMask = (cellType == _cellCache[cx, cy].Type) ? _cellReliefMasks[x, y] : (byte)0;
             float textureType = isRelief ? 1.0f : 0.0f;
 
             for (int i = 0; i < 4; i++) {
                 _colors[vIdx+i] = color; _subAtlasRects[vIdx+i] = data.AtlasRect;
                 _tileSizeUVs[vIdx+i] = tileSizeVec; _worldPositions[vIdx+i] = worldPosVec;
                 _animationData[vIdx+i] = animDataVec; _localUVs[vIdx+i] = _localUVsBuffer[i];
-                _shadowReliefData[vIdx+i] = new Vector2(textureType, isRelief ? reliefMask : (i==0?s0:i==1?s1:i==2?s2:s3));
+                _shadowReliefData[vIdx+i] = new Vector2(textureType, isRelief ? reliefMask : _gridShadowValues[x + (i==1||i==2?1:0), y + (i==2||i==3?1:0)]);
             }
 
             _subMeshIndices[atlasIndex].Add(vIdx + 0); _subMeshIndices[atlasIndex].Add(vIdx + 3); _subMeshIndices[atlasIndex].Add(vIdx + 2);
@@ -366,66 +442,17 @@ namespace Fodinae.Assets.Scripts.World
             vIdx += 4;
         }
 
-        private CachedCellData GetNeighborCacheEntry(CellType type, int cx, int cy, List<TextureAtlas> atlases)
+        private ref CachedCellData GetNeighborCacheEntry(CellType type, int cx, int cy, List<TextureAtlas> atlases)
         {
             for (int dy = -1; dy <= 1; dy++)
                 for (int dx = -1; dx <= 1; dx++)
-                    if (_cellCache[cx + dx, cy + dy].Type == type) return _cellCache[cx + dx, cy + dy];
-
-            var meta = GetMetadata(type, atlases);
-            return new CachedCellData {
+                    if (_cellCache[cx + dx, cy + dy].Type == type) return ref _cellCache[cx + dx, cy + dy];
+            static CachedCellData fallback; var meta = GetMetadata(type, atlases);
+            fallback = new CachedCellData {
                 Type = type, Properties = meta.Properties, ReliefGroup = meta.ReliefGroup, Distortion = meta.Distortion,
                 MinimapColor = meta.MinimapColor, AtlasRect = meta.AtlasRect, AtlasIndex = meta.AtlasIndex, UVTileSize = meta.UVTileSize
             };
-        }
-
-        private byte GetNeighborMaskCached(int cx, int cy, int groupId)
-        {
-            byte mask = 0;
-            if (_cellCache[cx - 1, cy].HasTileGroup && _cellCache[cx - 1, cy].TileGroupId == groupId) mask |= 1;
-            if (_cellCache[cx - 1, cy + 1].HasTileGroup && _cellCache[cx - 1, cy + 1].TileGroupId == groupId) mask |= 2;
-            if (_cellCache[cx, cy + 1].HasTileGroup && _cellCache[cx, cy + 1].TileGroupId == groupId) mask |= 4;
-            if (_cellCache[cx + 1, cy + 1].HasTileGroup && _cellCache[cx + 1, cy + 1].TileGroupId == groupId) mask |= 8;
-            if (_cellCache[cx + 1, cy].HasTileGroup && _cellCache[cx + 1, cy].TileGroupId == groupId) mask |= 16;
-            if (_cellCache[cx + 1, cy - 1].HasTileGroup && _cellCache[cx + 1, cy - 1].TileGroupId == groupId) mask |= 32;
-            if (_cellCache[cx, cy - 1].HasTileGroup && _cellCache[cx, cy - 1].TileGroupId == groupId) mask |= 64;
-            if (_cellCache[cx - 1, cy - 1].HasTileGroup && _cellCache[cx - 1, cy - 1].TileGroupId == groupId) mask |= 128;
-            return mask;
-        }
-
-        private float GetShadowValueCached(int cx, int cy)
-        {
-            bool hasCaster = (_cellCache[cx-1,cy-1].Properties & CellConfigProperties.DropsShadow) != 0 || (_cellCache[cx,cy-1].Properties & CellConfigProperties.DropsShadow) != 0 || (_cellCache[cx-1,cy].Properties & CellConfigProperties.DropsShadow) != 0 || (_cellCache[cx,cy].Properties & CellConfigProperties.DropsShadow) != 0;
-            bool hasReceiver = (_cellCache[cx-1,cy-1].Properties & CellConfigProperties.ReceivesShadow) != 0 || (_cellCache[cx,cy-1].Properties & CellConfigProperties.ReceivesShadow) != 0 || (_cellCache[cx-1,cy].Properties & CellConfigProperties.ReceivesShadow) != 0 || (_cellCache[cx,cy].Properties & CellConfigProperties.ReceivesShadow) != 0;
-            return (hasCaster && hasReceiver) ? 0.7f : 0.0f;
-        }
-
-        private byte GetReliefMaskCached(int cx, int cy, byte currentRelief, out bool isRelief)
-        {
-            isRelief = false; byte mask = 0;
-            if (_cellCache[cx, cy + 1].ReliefGroup >= currentRelief) mask += 1; else isRelief = true;
-            if (_cellCache[cx - 1, cy].ReliefGroup >= currentRelief) mask += 2; else isRelief = true;
-            if (_cellCache[cx, cy - 1].ReliefGroup >= currentRelief) mask += 4; else isRelief = true;
-            if (_cellCache[cx + 1, cy].ReliefGroup >= currentRelief) mask += 8; else isRelief = true;
-            return mask;
-        }
-
-        private Vector3 GetVertexOffsetCached(int cx, int cy)
-        {
-            var tl = _cellCache[cx - 1, cy]; var tr = _cellCache[cx, cy];
-            var bl = _cellCache[cx - 1, cy - 1]; var br = _cellCache[cx, cy - 1];
-            if (tl.Distortion == CellDistortionType.Block || tr.Distortion == CellDistortionType.Block || bl.Distortion == CellDistortionType.Block || br.Distortion == CellDistortionType.Block) return Vector3.zero;
-            int xSign = 0, ySign = 0;
-            if (bl.Distortion == CellDistortionType.Cause) { xSign -= 1; ySign += 1; }
-            if (br.Distortion == CellDistortionType.Cause) { xSign += 1; ySign += 1; }
-            if (tl.Distortion == CellDistortionType.Cause) { xSign -= 1; ySign -= 1; }
-            if (tr.Distortion == CellDistortionType.Cause) { xSign += 1; ySign -= 1; }
-            if (xSign == 0 && ySign == 0) return Vector3.zero;
-            uint seed = (uint)((_cacheMinX + cx) * 374761397 + (_cacheMinY + cy) * 668265263);
-            seed = (seed ^ (seed >> 13)) * 1274126177; seed = seed ^ (seed >> 16);
-            float rx = ((seed % 4) + 1) * 0.0625f;
-            uint seed2 = seed * 2654435761u; float ry = ((seed2 % 4) + 1) * 0.0625f;
-            return new Vector3(xSign > 0 ? rx : (xSign < 0 ? -rx : 0), ySign > 0 ? ry : (ySign < 0 ? -ry : 0), 0);
+            return ref fallback;
         }
 
         private void ComputeBackgroundMap()
