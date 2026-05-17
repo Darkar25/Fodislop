@@ -23,7 +23,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             Name "ForwardLit"
             Tags { "LightMode" = "UniversalForward" }
 
-            Blend Off
+            Blend SrcAlpha OneMinusSrcAlpha
             ZWrite On
             Cull Off
 
@@ -42,8 +42,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPosAttr : TEXCOORD3;
                 float4 animData     : TEXCOORD4;
-                float2 shadowRelief : TEXCOORD5;
-                float2 localUV      : TEXCOORD6;
+                float4 packedData   : TEXCOORD5; // x: textureType, y: relief/shadow, zw: localUV
             };
 
             struct Varyings
@@ -55,8 +54,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPos     : TEXCOORD3;
                 float4 animData     : TEXCOORD4;
-                float2 shadowRelief : TEXCOORD5;
-                float2 localUV      : TEXCOORD6;
+                float4 packedData   : TEXCOORD5;
             };
 
             TEXTURE2D(_BaseMap);
@@ -128,14 +126,13 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 output.tileSizeUV = input.tileSizeUV;
                 output.worldPos = input.worldPosAttr;
                 output.animData = input.animData;
-                output.shadowRelief = input.shadowRelief;
-                output.localUV = input.localUV;
+                output.packedData = input.packedData;
                 return output;
             }
 
             half4 frag (Varyings input) : SV_Target
             {
-                if (input.animData.w > 0.5)
+                if (input.subAtlasRect.z < 0.0001)
                 {
                     if (input.color.a < 0.05) discard;
                     return input.color;
@@ -151,10 +148,23 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float2 tileSizeUV = input.tileSizeUV.xy;
 
                 if (subAtlasSizeUV.x <= 0 || tileSizeUV.x <= 0)
-                    return half4(1, 0, 1, 1);
+                {
+                    if (input.color.a < 0.05) discard;
+                    return input.color;
+                }
 
-                // Use ceil to handle partial variations (e.g. 10.5 tiles -> 11 variations)
-                // Subtracting a small epsilon to avoid rounding up exact integers due to precision
+                float frameCount = input.tileSizeUV.z;
+                float frameHeightTiles = input.tileSizeUV.w;
+                float animOffsetUV = 0;
+
+                if (frameCount > 1.5)
+                {
+                    float speed = input.animData.y;
+                    if (speed <= 0) speed = 5;
+                    float frameIndex = floor(fmod(_Time.y * speed, frameCount));
+                    animOffsetUV = frameIndex * frameHeightTiles * tileSizeUV.y;
+                }
+
                 float2 tilesCount = ceil(subAtlasSizeUV / tileSizeUV - 0.0001);
                 tilesCount = max(tilesCount, 1.0);
 
@@ -163,35 +173,25 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 bool isTiling = input.worldPos.w > 0.5;
 
                 const float EPS = 0.0001;
-
-                // Y-variant calculation
-                // abs() handles negative world coordinates correctly
                 float variantY = fmod(abs(gPos.y), tilesCount.y);
-                // Invert Y because server Y increases downwards but texture V increases upwards
                 wrapped.y = floor(tilesCount.y - EPS - variantY);
 
                 if (isTiling)
                 {
-                    wrapped.x = floor(input.worldPos.z + EPS); // Base Tile Index
+                    wrapped.x = floor(input.worldPos.z + EPS);
                 }
                 else
                 {
                     wrapped.x = floor(fmod(abs(gPos.x), tilesCount.x) + EPS);
                 }
 
-                // Clamp wrapped coordinates to ensure they are within valid range [0, tilesCount-1]
                 wrapped = clamp(wrapped, 0.0, tilesCount - 1.0);
-
                 float2 tileOffsetUV = wrapped * tileSizeUV;
-
-                // Calculate available space for this tile (relevant for partial tiles at the edge of sub-atlas)
                 float2 availableTileSize = min(tileSizeUV, subAtlasSizeUV - tileOffsetUV);
-
-                // Inset the sampling slightly to avoid bleeding into neighboring tiles/padding
-                // and clamp UVs within the quad boundaries [EPS, 1.0-EPS]
                 float2 quadUV = clamp(input.uv, EPS, 1.0 - EPS);
 
                 float2 finalUV = baseUV + tileOffsetUV + quadUV * availableTileSize;
+                finalUV.y += animOffsetUV;
 
                 half4 texColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, finalUV);
 
@@ -205,28 +205,26 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float speed = input.animData.y;
                 float offset = input.animData.z;
 
-                // Shadow / Relief logic
-                float textureType = input.shadowRelief.x;
-                float reliefMaskVal = input.shadowRelief.y;
+                float textureType = input.packedData.x;
+                float reliefMaskVal = input.packedData.y;
 
-                if (textureType > 0.5) // Relief (Type 1)
+                if (textureType > 0.5)
                 {
                     float val = 15.0 - reliefMaskVal;
-                    // Bits: 1(Top), 2(Left), 4(Bottom), 8(Right)
-                    // Extraction: frac(val * 0.25) extracts bit 1 (Left), 0.125 bit 2 (Bottom), 0.0625 bit 3 (Right)
-                    float3 bits = frac(val * float3(0.25, 0.125, 0.0625));
-                    bool3 isCliff = bits >= 0.5; // x=Left, y=Bottom, z=Right
+                    float4 bits = frac(val * float4(0.5, 0.25, 0.125, 0.0625));
+                    bool4 isCliff = bits >= 0.5;
 
-                    float u = input.localUV.x;
-                    float v = input.localUV.y;
+                    float u = input.packedData.z;
+                    float v = input.packedData.w;
                     float uvMinus = u - v;
                     float uvPlus = u + v;
 
-                    bool isLeft = (uvPlus < 0.0) && (uvMinus < 0.0);
+                    bool isTop    = (uvPlus > 0.0) && (uvMinus < 0.0);
+                    bool isLeft   = (uvPlus < 0.0) && (uvMinus < 0.0);
                     bool isBottom = (uvMinus > 0.0) && (uvPlus < 0.0);
-                    bool isRight = (uvPlus > 0.0) && (uvMinus > 0.0);
+                    bool isRight  = (uvPlus > 0.0) && (uvMinus > 0.0);
 
-                    bool activeCliff = (isLeft && isCliff.x) || (isBottom && isCliff.y) || (isRight && isCliff.z);
+                    bool activeCliff = (isTop && isCliff.x) || (isLeft && isCliff.y) || (isBottom && isCliff.z) || (isRight && isCliff.w);
 
                     if (activeCliff)
                     {
@@ -237,7 +235,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 }
                 else // Shadow (Type 0)
                 {
-                    float shadowVal = input.shadowRelief.y;
+                    float shadowVal = input.packedData.y;
                     finalRgb *= (1.0 - shadowVal * shadowVal); // Quadratic falloff
                 }
 
@@ -284,7 +282,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
             Name "Universal2D"
             Tags { "LightMode" = "Universal2D" }
 
-            Blend Off
+            Blend SrcAlpha OneMinusSrcAlpha
             ZWrite On
             Cull Off
 
@@ -303,8 +301,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPosAttr : TEXCOORD3;
                 float4 animData     : TEXCOORD4;
-                float2 shadowRelief : TEXCOORD5;
-                float2 localUV      : TEXCOORD6;
+                float4 packedData   : TEXCOORD5;
             };
 
             struct Varyings
@@ -316,8 +313,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float4 tileSizeUV   : TEXCOORD2;
                 float4 worldPos     : TEXCOORD3;
                 float4 animData     : TEXCOORD4;
-                float2 shadowRelief : TEXCOORD5;
-                float2 localUV      : TEXCOORD6;
+                float4 packedData   : TEXCOORD5;
             };
 
             TEXTURE2D(_BaseMap);
@@ -389,14 +385,13 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 output.tileSizeUV = input.tileSizeUV;
                 output.worldPos = input.worldPosAttr;
                 output.animData = input.animData;
-                output.shadowRelief = input.shadowRelief;
-                output.localUV = input.localUV;
+                output.packedData = input.packedData;
                 return output;
             }
 
             half4 frag (Varyings input) : SV_Target
             {
-                if (input.animData.w > 0.5)
+                if (input.subAtlasRect.z < 0.0001)
                 {
                     if (input.color.a < 0.05) discard;
                     return input.color;
@@ -412,9 +407,23 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float2 tileSizeUV = input.tileSizeUV.xy;
 
                 if (subAtlasSizeUV.x <= 0 || tileSizeUV.x <= 0)
-                    return half4(1, 0, 1, 1);
+                {
+                    if (input.color.a < 0.05) discard;
+                    return input.color;
+                }
 
-                // Use ceil to handle partial variations
+                float frameCount = input.tileSizeUV.z;
+                float frameHeightTiles = input.tileSizeUV.w;
+                float animOffsetUV = 0;
+
+                if (frameCount > 1.5)
+                {
+                    float speed = input.animData.y;
+                    if (speed <= 0) speed = 5;
+                    float frameIndex = floor(fmod(_Time.y * speed, frameCount));
+                    animOffsetUV = frameIndex * frameHeightTiles * tileSizeUV.y;
+                }
+
                 float2 tilesCount = ceil(subAtlasSizeUV / tileSizeUV - 0.0001);
                 tilesCount = max(tilesCount, 1.0);
 
@@ -423,14 +432,12 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 bool isTiling = input.worldPos.w > 0.5;
 
                 const float EPS = 0.0001;
-
-                // Y-variant calculation
                 float variantY = fmod(abs(gPos.y), tilesCount.y);
                 wrapped.y = floor(tilesCount.y - EPS - variantY);
 
                 if (isTiling)
                 {
-                    wrapped.x = floor(input.worldPos.z + EPS); // Base Tile Index
+                    wrapped.x = floor(input.worldPos.z + EPS);
                 }
                 else
                 {
@@ -438,12 +445,12 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 }
 
                 wrapped = clamp(wrapped, 0.0, tilesCount - 1.0);
-
                 float2 tileOffsetUV = wrapped * tileSizeUV;
                 float2 availableTileSize = min(tileSizeUV, subAtlasSizeUV - tileOffsetUV);
                 float2 quadUV = clamp(input.uv, EPS, 1.0 - EPS);
 
                 float2 finalUV = baseUV + tileOffsetUV + quadUV * availableTileSize;
+                finalUV.y += animOffsetUV;
 
                 half4 texColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, finalUV);
 
@@ -457,28 +464,26 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 float speed = input.animData.y;
                 float offset = input.animData.z;
 
-                // Shadow / Relief logic
-                float textureType = input.shadowRelief.x;
-                float reliefMaskVal = input.shadowRelief.y;
+                float textureType = input.packedData.x;
+                float reliefMaskVal = input.packedData.y;
 
-                if (textureType > 0.5) // Relief (Type 1)
+                if (textureType > 0.5)
                 {
                     float val = 15.0 - reliefMaskVal;
-                    // Bits: 1(Top), 2(Left), 4(Bottom), 8(Right)
-                    // Extraction: frac(val * 0.25) extracts bit 1 (Left), 0.125 bit 2 (Bottom), 0.0625 bit 3 (Right)
-                    float3 bits = frac(val * float3(0.25, 0.125, 0.0625));
-                    bool3 isCliff = bits >= 0.5; // x=Left, y=Bottom, z=Right
+                    float4 bits = frac(val * float4(0.5, 0.25, 0.125, 0.0625));
+                    bool4 isCliff = bits >= 0.5;
 
-                    float u = input.localUV.x;
-                    float v = input.localUV.y;
+                    float u = input.packedData.z;
+                    float v = input.packedData.w;
                     float uvMinus = u - v;
                     float uvPlus = u + v;
 
-                    bool isLeft = (uvPlus < 0.0) && (uvMinus < 0.0);
+                    bool isTop    = (uvPlus > 0.0) && (uvMinus < 0.0);
+                    bool isLeft   = (uvPlus < 0.0) && (uvMinus < 0.0);
                     bool isBottom = (uvMinus > 0.0) && (uvPlus < 0.0);
-                    bool isRight = (uvPlus > 0.0) && (uvMinus > 0.0);
+                    bool isRight  = (uvPlus > 0.0) && (uvMinus > 0.0);
 
-                    bool activeCliff = (isLeft && isCliff.x) || (isBottom && isCliff.y) || (isRight && isCliff.z);
+                    bool activeCliff = (isTop && isCliff.x) || (isLeft && isCliff.y) || (isBottom && isCliff.z) || (isRight && isCliff.w);
 
                     if (activeCliff)
                     {
@@ -489,7 +494,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
                 }
                 else // Shadow (Type 0)
                 {
-                    float shadowVal = input.shadowRelief.y;
+                    float shadowVal = input.packedData.y;
                     finalRgb *= (1.0 - shadowVal * shadowVal); // Quadratic falloff
                 }
 
@@ -517,7 +522,7 @@ Shader "Universal Render Pipeline/Custom/Terrain"
 
                     float factor = waveCubed * lumMask * chroma;
 
-                    finalRgb = (finalRgb * (1.0 - factor)) + (factor * _ShimmerColor.rgb);
+                    finalRgb = lerp(finalRgb, _ShimmerColor.rgb, factor);
                 }
                 else if (animType == 3) // Rainbow
                 {
