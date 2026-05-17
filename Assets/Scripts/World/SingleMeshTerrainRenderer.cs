@@ -66,6 +66,7 @@ namespace Fodinae.Assets.Scripts.World
         private CachedCellData[,] _cellCache;
         private int _cacheMinX, _cacheMinY;
         private int _cacheWidth, _cacheHeight;
+        private CachedCellData _fallbackCacheEntry;
 
         // Pre-calculation buffers
         private Vector3[,] _gridVertexOffsets;
@@ -447,12 +448,13 @@ namespace Fodinae.Assets.Scripts.World
             for (int dy = -1; dy <= 1; dy++)
                 for (int dx = -1; dx <= 1; dx++)
                     if (_cellCache[cx + dx, cy + dy].Type == type) return ref _cellCache[cx + dx, cy + dy];
-            static CachedCellData fallback; var meta = GetMetadata(type, atlases);
-            fallback = new CachedCellData {
+
+            var meta = GetMetadata(type, atlases);
+            _fallbackCacheEntry = new CachedCellData {
                 Type = type, Properties = meta.Properties, ReliefGroup = meta.ReliefGroup, Distortion = meta.Distortion,
                 MinimapColor = meta.MinimapColor, AtlasRect = meta.AtlasRect, AtlasIndex = meta.AtlasIndex, UVTileSize = meta.UVTileSize
             };
-            return ref fallback;
+            return ref _fallbackCacheEntry;
         }
 
         private void ComputeBackgroundMap()
